@@ -6,7 +6,8 @@ module Modules.ConfigReader (
   tempDirPathConfig,
   mrAccessApiConfig,
   sourceUrlConfig,
-  listProjConfig
+  listProjConfig,
+  testCmdGet
 ) where
 
 import Control.Applicative((<*))
@@ -40,10 +41,9 @@ configOption = do
 
 optHead :: GenParser Char st String
 optHead = do
-  def <- try (string "TempDirPath")   <|>
+  def <- try (string "TestCmd")   <|>
          try (string "MRAccessApi")   <|>
          try (string "Projects")      <|>
-         try (string "SourceUrl")     <|>
          try (string "MRAcceptApi")
   return def
 
@@ -162,3 +162,8 @@ sourceUrlConfig prjName opts = pairValueSearch prjName "SourceUrl" opts
 
 mrAcceptApiConfig :: String -> [[String]] -> Maybe String
 mrAcceptApiConfig prjName opts = pairValueSearch prjName "MRAcceptApi" opts
+
+testCmdGet :: [[String]] -> Maybe String
+testCmdGet opts = do
+  cmd <- searchConfig "TestCmd" opts
+  return $ head cmd
