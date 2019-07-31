@@ -5,8 +5,12 @@ module Modules.ConfigReader (
   windRiverPathConfig,
   tempDirPathConfig,
   mrAccessApiConfig,
+  mrAcceptApiConfig,
+  mrRebaseApiConfig,
   sourceUrlConfig,
   listProjConfig,
+  emailInfoGet,
+  adminEmailGet,
   testCmdGet
 ) where
 
@@ -41,10 +45,13 @@ configOption = do
 
 optHead :: GenParser Char st String
 optHead = do
-  def <- try (string "TestCmd")   <|>
+  def <- try (string "TestCmd")       <|>
          try (string "MRAccessApi")   <|>
          try (string "Projects")      <|>
-         try (string "MRAcceptApi")
+         try (string "MRAcceptApi")   <|>
+         try (string "MRRebaseApi")   <|>
+         try (string "Email")         <|>
+         try (string "AdminEmail")
   return def
 
 optDefSeperate :: GenParser Char st String
@@ -160,8 +167,20 @@ mrAccessApiConfig prjName opts = pairValueSearch prjName "MRAccessApi" opts
 sourceUrlConfig :: String -> [[String]] -> Maybe String
 sourceUrlConfig prjName opts = pairValueSearch prjName "SourceUrl" opts
 
-mrAcceptApiConfig :: String -> [[String]] -> Maybe String
-mrAcceptApiConfig prjName opts = pairValueSearch prjName "MRAcceptApi" opts
+mrAcceptApiConfig :: [[String]] -> Maybe String
+mrAcceptApiConfig opts = do
+  api <- searchConfig "MRAcceptApi" opts
+  return $ head api
+
+mrRebaseApiConfig :: [[String]] -> Maybe String
+mrRebaseApiConfig opts =
+  searchConfig "MRRebaseApi" opts >>= Just . head
+
+emailInfoGet :: [[String]] -> Maybe [String]
+emailInfoGet opts = searchConfig "Email" opts
+
+adminEmailGet :: [[String]] -> Maybe String
+adminEmailGet opts = searchConfig "AdminEmail" opts >>= Just . head
 
 testCmdGet :: [[String]] -> Maybe String
 testCmdGet opts = do
