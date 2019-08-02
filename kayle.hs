@@ -95,6 +95,8 @@ accept mng cfgs = do
     409 -> notify "SHA does not match HEAD of source branch" cfgs
     -- If you don’t have permissions to accept this merge request - you’ll get a 401
     401 -> notify "Permissions denied" cfgs
+    -- Merge request not found or the url is wrong
+    404 -> notify "Merge requests not found or the url is wrong" cfgs
     -- Success
     200 -> return ()
 
@@ -109,6 +111,9 @@ rebase mng cfgs = do
     -- you’ll get a 403 Forbidden response.
     403 -> notify "Permission denied to rebase merge request" cfgs
     -- The API will return a 202 Accepted response if the request is enqueued successfully
+    -- Merge request not found or the url is wrong
+    404 -> notify "Merge requests not found or the url is wrong" cfgs
+    -- Success
     202 -> return ()
 
 put_req :: String -> Manager -> IO Int
@@ -145,7 +150,7 @@ judge c = do
 loadConfig :: String -> String -> IO Configs
 loadConfig proj path = do
   -- Load configuration file from gitlab
-  isSuccess <- run_command_1 ("git clone " ++ configPath)
+  isSuccess <- run_command_1 ("git clone " ++ configPath ++ " config")
   if isSuccess == True
     -- Parsing the configuration file specified by project
     then parsingConfig
