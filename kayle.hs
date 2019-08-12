@@ -64,7 +64,8 @@ main = do
 
   if isCorrect
     -- Do judgement
-    then do isPass <- judge $ fromJust $ testCmdGet $ configs
+    then do isPass <- judge $ Prelude.head $ configSearch configs "Command"
+
             -- Accept merge request if pass test otherwise exit with non-zero value.
             executor isPass manager configs
 
@@ -79,7 +80,7 @@ accept :: Manager -> Configs -> IO ()
 accept mng cfgs = do
   args <- getArgs
 
-  let acceptUrl = replace_iid (fromJust $ (mrAcceptApiConfig cfgs)) (Prelude.last args)
+  let acceptUrl = replace_iid (Prelude.head $ configSearch cfgs "AcceptUrl") (Prelude.last args)
   code <- put_req acceptUrl mng
 
   case code of
@@ -103,7 +104,7 @@ accept mng cfgs = do
 rebase :: Manager -> Configs -> IO ()
 rebase mng cfgs = do
   args <- getArgs
-  let rebaseUrl = replace_iid (fromJust $ (mrRebaseApiConfig cfgs)) (Prelude.last args)
+  let rebaseUrl = replace_iid (Prelude.head $ configSearch cfgs "RebaseUrl") (Prelude.last args)
   code <- put_req rebaseUrl mng
 
   case code of
@@ -169,7 +170,18 @@ loadConfig proj path = do
       let config = fromRight (("error":[]):[]) $ parseConfig contents
       return config
 
-
+configSearch :: Configs -> String -> [String]
+configSearch configs theConfig = case theConfig of
+  "Command" -> case testCmdGet configs of
+                 Nothing -> error errorMsg
+                 Just cmd -> cmd:[]
+  "AcceptUrl" -> case mrAcceptApiConfig configs of
+                   Nothing -> error errorMsg
+                   Just url -> url:[]
+  "RebaseUrl" -> case mrRebaseApiConfig configs of
+                   Nothing -> error errorMsg
+                   Just url -> url:[]
+  where errorMsg = "No " ++ theConfig ++ " found"
 
 run_command :: String -> [String] -> IO Bool
 run_command cmd args = do
