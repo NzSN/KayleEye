@@ -35,6 +35,7 @@ import System.IO.Error
 
 -- Configuration
 import Modules.ConfigReader
+import Types
 
 -- Constants
 
@@ -49,7 +50,6 @@ seconds_micro = 1000000
 
 type Revision = String
 type JudgeContent = String
-type Configs = [[String]]
 
 main = do
   -- Spawn http client manager
@@ -80,6 +80,10 @@ judge :: JudgeContent -> IO Bool
 judge c = do
   isSuccess <- run_command_1 c
   return isSuccess
+
+-- Accept, this function will notify kayleHome the part test
+-- current instance is pass
+
 
 -- Load configuration file from gitlab and then parsing it
 loadConfig :: String -> String -> IO Configs

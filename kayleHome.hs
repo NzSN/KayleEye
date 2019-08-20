@@ -33,9 +33,81 @@ import Network.Mail.SMTP
 import Control.Exception.Base
 import System.IO.Error
 
--- Configuration
-import Modules.ConfigReader
 
+
+-- Configuration
+-- import Modules.ConfigReader
+
+-- Homer
+import Homer
+
+-- Socket
+import Network.Socket
+
+type Configs = [[String]]
+
+-- configPath is a url point to gitlab where to store
+-- configuration files.
+configPath :: String
+configPath = "git@gpon.git.com:root/CI_Config.git"
+
+main = do
+  -- Spawn http client manager
+  manager <- newManager defaultManagerSettings
+
+  -- Configuration file loaded
+  args <- getArgs
+  configs <- loadConfig (Prelude.head args) configPath
+
+  -- Checking that is the configurations file be choosen is correct
+  let isCorrect = isProjExists (Prelude.head args) configs
+
+  if isCorrect
+    then procRequests
+    else error "Incorrect configuration file"
+
+procRequests :: Configs -> IO ()
+procRequests cfgs = do
+  let homer = buildHomer
+
+  letter <- waitHomer homer
+
+  let proj = proj letter
+      ident = ident letter
+
+  procRequests cfgs
+
+-- Load configuration file from gitlab and then parsing it
+loadConfig :: String -> String -> IO Configs
+loadConfig proj path = do
+  -- Load configuration file from gitlab
+  isSuccess <- run_command_1 ("git clone " ++ configPath ++ " config")
+  if isSuccess == True
+    -- Parsing the configuration file specified by project
+    then parsingConfig
+    -- Otherwise update the configuration before parsing it
+    else setCurrentDirectory "./config" >>
+         run_command_1 ("git pull") >>
+         setCurrentDirectory ".." >>
+         -- Parsing
+         parsingConfig
+  where
+    parsingConfig :: IO [[String]]
+    parsingConfig = do
+      file_ref <- openFile ("./config/" ++ proj ++ ".txt") ReadMode
+      contents <-  hGetContents file_ref
+
+      let config = fromRight (("error":[]):[]) $ parseConfig contents
+      return config
+
+buildHomer :: IO Homer
+buildHomer = do
+  -- fixme: should get prot from configuration
+  addrInfos <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just "8011")
+  let setverAddr = head addrInfos
+
+  sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
+  return $ Homer sock (addrAddress serverAddr)
 
 accept :: Manager -> Configs -> IO ()
 accept mng cfgs = do
