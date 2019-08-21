@@ -1,1 +1,3 @@
-!*.hs
+.stack-work/
+KayleEye.cabal
+*~
