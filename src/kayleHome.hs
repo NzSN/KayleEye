@@ -36,7 +36,7 @@ import System.IO.Error
 
 
 -- Configuration
--- import Modules.ConfigReader
+import Modules.ConfigReader
 
 -- Homer
 import Homer
@@ -45,6 +45,10 @@ import Types
 
 -- Socket
 import Network.Socket
+
+-- Unit is microseconds
+seconds_micro :: Integer
+seconds_micro = 1000000
 
 -- configPath is a url point to gitlab where to store
 -- configuration files.
@@ -69,19 +73,12 @@ main = do
   boxInit bKey
 
   if isCorrect
-    then procRequests
+    then procRequests homer bKey configs
     else error "Incorrect configuration file"
 
 procRequests :: Homer -> BoxKey -> Configs -> IO ()
 procRequests homer key_ cfgs = do
-
-  letter <- waitHomer homer
-
-  let ident = ident letter
-  if isLetterExists key_ ident
-     then 
-
-  procRequests cfgs
+  procRequests homer key_ cfgs
 
 -- Load configuration file from gitlab and then parsing it
 loadConfig :: String -> String -> IO Configs
@@ -110,7 +107,7 @@ buildHomer :: IO Homer
 buildHomer = do
   -- fixme: should get prot from configuration
   addrInfos <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just "8011")
-  let setverAddr = Prelude.head addrInfos
+  let serverAddr = Prelude.head addrInfos
 
   sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
   return $ Homer sock (addrAddress serverAddr)
@@ -129,7 +126,7 @@ accept mng cfgs = do
     405 -> notify "Merge request is unable to be accepted" cfgs
     -- If it has some conflicts and can not be merged - you’ll get a 406 and
     -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs >> delay (3 * seconds_micro) >> accept mng cfgs
+    406 -> rebase mng cfgs >> delay (3 * seconds_micro) >> print "fixme"
     -- If the sha parameter is passed and does not match the HEAD of the source -
     -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
     409 -> notify "SHA does not match HEAD of source branch" cfgs
@@ -181,4 +178,35 @@ notify content cfgs = do
   let mail = simpleMail from to cc bcc subject [body]
   sendMailWithLogin host user pass mail
 
+run_command :: String -> [String] -> IO Bool
+run_command cmd args = do
+  status <- try (callProcess cmd args) :: IO (Either SomeException ())
+  case status of
+    Left ex -> return False
+    Right () -> return True
 
+run_command_1 :: String -> IO Bool
+run_command_1 cmd = do
+  isSuccess <- try (callCommand cmd) :: IO (Either SomeException ())
+  case isSuccess of
+    Left ex -> return False
+    Right () -> return True
+
+
+replace_iid :: String -> String -> String
+replace_iid ('*':xs) iid = iid ++ replace_iid xs iid
+replace_iid (x:xs) iid = x : replace_iid xs iid
+replace_iid "" iid = ""
+
+configSearch :: Configs -> String -> [String]
+configSearch configs theConfig = case theConfig of
+  "Command" -> case testCmdGet configs of
+                 Nothing -> error errorMsg
+                 Just cmd -> cmd:[]
+  "AcceptUrl" -> case mrAcceptApiConfig configs of
+                   Nothing -> error errorMsg
+                   Just url -> url:[]
+  "RebaseUrl" -> case mrRebaseApiConfig configs of
+                   Nothing -> error errorMsg
+                   Just url -> url:[]
+  where errorMsg = "No " ++ theConfig ++ " found"

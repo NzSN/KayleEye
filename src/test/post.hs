@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import Data.Map
 import Network.HTTP.Client
 import Network.HTTP.Types.Status (statusCode)
 import Data.Aeson (object, (.=), encode)

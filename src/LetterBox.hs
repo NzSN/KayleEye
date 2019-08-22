@@ -2,6 +2,8 @@
 
 module LetterBox where
 
+import Data.Aeson
+import Data.Map
 import Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class
 
@@ -68,7 +70,7 @@ insertLetter :: BoxKey
              -> IO ()
 insertLetter key_ tblN letter = do
   run (key key_) "INSERT INTO ? VALUES (?, ?)"
-    [toSql tblN, toSql (ident letter), toSql (content letter)]
+    [toSql tblN, toSql (ident letter), toSql (encode $ (content letter))]
   commit (key key_)
 
 searchLetter :: BoxKey
@@ -76,13 +78,15 @@ searchLetter :: BoxKey
              -> MaybeT IO Letter
 searchLetter key_ ident_ = MaybeT $ do
   letters <- quickQuery' (key key_) searchLetterStmt [toSql procTbl, toSql ident_]
-  if not null letters
-    then return $ Just $ head $ map toLetter letters
+  if not $ Prelude.null letters
+    then return $ Just $ head $ Prelude.map toLetter letters
     else return Nothing
 
   where toLetter :: [SqlValue] -> Letter
         toLetter [sqlIdent, sqlContent] =
-          Letter (fromSql sqlIdent) (fromSql sqlContent)
+          Letter (fromSql sqlIdent)
+          -- fixme: decode may return Nothing
+          (fromJust $ (decode $ fromSql sqlContent :: Maybe (Map String String)))
 
 removeLetter :: BoxKey
              -> String -- Table name
@@ -97,14 +101,14 @@ isLetterExists :: BoxKey
                -> IO Bool
 isLetterExists key_ ident_ = do
   letter <- runMaybeT $ searchLetter key_ ident_
-  if null letter
+  if Prelude.null letter
     then return True
     else return False
 
 updateLetter :: BoxKey
-             -> String -- Identity
-             -> String -- Content
-             -> Bool   -- Is test done ? yes,then move to history table
+             -> String     -- Identity
+             -> ByteString -- Content
+             -> Bool       -- Is test done ? yes,then move to history table
              -> IO Int
 updateLetter key_ ident_ content status = do
   letter <- runMaybeT $ searchLetter key_ ident_
@@ -113,7 +117,7 @@ updateLetter key_ ident_ content status = do
     then return 1
     else let letter_ = fromJust $ letter
          in if status == True
-            then (insertLetter key_ historyTbl (Letter (ident letter_) content))
+            then (insertLetter key_ historyTbl (Letter (ident letter_) (fromJust $ (decode content :: Maybe (Map String String)))))
                  >> removeLetter key_ procTbl (ident letter_)
                  >> commit (key key_) >> return 0
             else run (key key_) contentUpdateStmt [toSql content, toSql (ident letter_)]

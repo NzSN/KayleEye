@@ -16,7 +16,6 @@ import Data.List.NonEmpty
 import Data.Either
 import Data.Text.Internal.Lazy as Lazy (Text)
 import Data.Text.Internal as Internal
-import Data.String.Conversions (cs)
 
 -- Process, File, Directory
 import System.Process as Process
@@ -66,7 +65,7 @@ main = do
 
 -- Accept if pass test otherwise throw an error
 executor :: Bool -> Manager -> Configs -> IO ()
-executor True m c = accept m c
+executor True m c = print "fixme"
 executor False m c = error "Test failed"
 
 judge :: JudgeContent -> IO Bool

@@ -21,6 +21,34 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- Cabal
+- parsec
+- split
+- aeson
+- containers
+- network
+- bytestring
+- text
+- http-client
+- http-types
+- process
+- directory
+- unbounded-delays
+- transformers
+- HDBC
+- HDBC-mysql
+- string-conversions
+- array
+- base16-bytestring
+- base64-bytestring
+- bytestring
+- connection
+- cryptohash
+- filepath
+- mime-mail
+- network
+- network-bsd
+- text
 
 library:
   source-dirs: src
