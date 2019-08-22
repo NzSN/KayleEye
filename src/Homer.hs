@@ -20,9 +20,33 @@ import Data.ByteString.Lazy.Internal as BI
 import Data.Text as Text
 import Network.Socket.ByteString as BS
 
+-- Identity Processing functions
+type IdentStr = String
+data Identity = Identity { ident_name :: String, ident_sha :: String }
+
+emptyIdent :: Identity
+emptyIdent = Identity "" ""
+
+ident2Str :: Identity -> IdentStr
+ident2Str i = (ident_name i) ++ ":" ++ (ident_sha i)
+
+str2Ident :: IdentStr -> Identity
+str2Ident str = Identity (Prelude.head identPart) (Prelude.last identPart)
+  where identPart = identSplit str
+
+identSplit :: String -> [String]
+identSplit [] = [""]
+identSplit all@(x:xs)
+  | x == ':'   = "" : shaPart
+  | otherwise = (x : (Prelude.head $ identSplit xs)) : Prelude.tail shaPart
+
+  where shaPart = identSplit xs
+
+-- Homer
 data Homer = Homer { rSocket :: Socket, rAddr :: SockAddr }
 
-data Letter = Letter { ident :: String, content :: Map String String }
+-- Letter
+data Letter = Letter { ident :: IdentStr, content :: Map String String }
 
 instance ToJSON Letter where
   toJSON (Letter ident content) =

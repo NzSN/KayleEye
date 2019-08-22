@@ -166,17 +166,3 @@ configGet :: Configs -> (Configs -> Maybe a) -> String -> a
 configGet cfgs f errMsg = case f cfgs of
                      Nothing  -> error errMsg
                      Just opt -> opt
-
--- Identity Processing functions
-data Identity = Identity { ident_name :: String, ident_sha :: String }
-ident2Str :: Identity -> String
-ident2Str i = (ident_name i) ++ ":" ++ (ident_sha i)
--- str2Ident :: String -> Identity
-
-identSplit :: String -> [String]
-identSplit [] = [""]
-identSplit all@(x:xs)
-  | x == ':'   = "" : shaPart
-  | otherwise = (x : (head $ identSplit xs)) : tail shaPart
-
-  where shaPart = identSplit xs

@@ -16,17 +16,20 @@ import System.Environment
 -- Configuration
 import Modules.ConfigReader as C
 
--- Homer
-import Homer
-import LetterBox
-import KayleConst
-import KayleBasics
-
 -- Monad Transformers
 import Control.Monad.Trans.Maybe
 
 -- Socket
 import Network.Socket
+
+-- Map
+import Data.Map
+
+-- Homer
+import Homer
+import LetterBox
+import KayleConst
+import KayleBasics
 
 main = do
   -- Spawn http client manager
@@ -55,16 +58,16 @@ procRequests homer key_ cfgs = do
   letter <- waitHomer homer
 
   isExists_history <- isLetterExists key_ historyTbl (ident letter)
-  nextRequests isExists_history
+
+  if isExists_history then nextRequests else return ()
 
   isExists_proc <- isLetterExists key_ procTbl (ident letter)
   if isExists_proc
     then do letter_ <- searchLetter_proc key_ (ident letter)
-            nextRequests True
-    else insertLetter key_ procTbl letter >> nextRequests True
+            nextRequests
+    else insertLetter key_ procTbl letter >> nextRequests
 
-  where nextRequests True = procRequests homer key_ cfgs
-        nextRequests False = return ()
+  where nextRequests = procRequests homer key_ cfgs
 
         searchLetter_proc key ident_ = do
           letter_m <- runMaybeT $ searchLetter key procTbl ident_
@@ -73,6 +76,13 @@ procRequests homer key_ cfgs = do
             Just l -> return l
 
 -- Generate a letter via exists letter and configuration
---letterInit :: Configs -> Letter -> Letter
---letterInit cfgs l =
---  let tProj = configGet cfgs testPiecesGet test_proj_err_msg
+letterInit :: Configs -> Letter -> Maybe Letter
+letterInit cfgs l = do
+  let ident_ = str2Ident (ident l)
+
+  if (ident_name ident_) == (testName tProj)
+    then Nothing
+    else return $ Letter (ident l) (fromList [(x, "F") | x <- tContents ])
+
+  where tProj = configGet cfgs testPiecesGet test_proj_err_msg
+        tContents = testContent tProj
