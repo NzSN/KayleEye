@@ -1,2 +1,5 @@
+import KayleBasics
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = do
+  print $ identSplit "123:456"

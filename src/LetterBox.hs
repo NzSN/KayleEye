@@ -14,8 +14,6 @@ import Data.Maybe
 import Data.ByteString.Lazy.Internal
 
 import Homer
-import Types
-
 
 procTbl :: String
 procTbl = "processing"
@@ -74,10 +72,11 @@ insertLetter key_ tblN letter = do
   commit (key key_)
 
 searchLetter :: BoxKey
+             -> String -- Table name
              -> String -- Identity
              -> MaybeT IO Letter
-searchLetter key_ ident_ = MaybeT $ do
-  letters <- quickQuery' (key key_) searchLetterStmt [toSql procTbl, toSql ident_]
+searchLetter key_ tbl ident_ = MaybeT $ do
+  letters <- quickQuery' (key key_) searchLetterStmt [toSql tbl, toSql ident_]
   if not $ Prelude.null letters
     then return $ Just $ head $ Prelude.map toLetter letters
     else return Nothing
@@ -97,28 +96,37 @@ removeLetter key_ tbl ident_ = do
   commit (key key_)
 
 isLetterExists :: BoxKey
+               -> String -- Table name
                -> String -- Identity
                -> IO Bool
-isLetterExists key_ ident_ = do
-  letter <- runMaybeT $ searchLetter key_ ident_
+isLetterExists key_ tbl ident_ = do
+  letter <- runMaybeT $ searchLetter key_ tbl ident_
   if Prelude.null letter
-    then return True
-    else return False
+    then return False
+    else return True
 
 updateLetter :: BoxKey
              -> String     -- Identity
              -> ByteString -- Content
-             -> Bool       -- Is test done ? yes,then move to history table
+             -> Bool       -- Is test done?
              -> IO Int
 updateLetter key_ ident_ content status = do
-  letter <- runMaybeT $ searchLetter key_ ident_
+  letter <- runMaybeT $ searchLetter key_ procTbl ident_
 
   if isNothing letter
     then return 1
-    else let letter_ = fromJust $ letter
-         in if status == True
-            then (insertLetter key_ historyTbl (Letter (ident letter_) (fromJust $ (decode content :: Maybe (Map String String)))))
-                 >> removeLetter key_ procTbl (ident letter_)
-                 >> commit (key key_) >> return 0
-            else run (key key_) contentUpdateStmt [toSql content, toSql (ident letter_)]
-                 >> commit (key key_) >> return 0
+    else updating (fromJust letter) status
+
+  where
+    -- Decoded letter content
+    decodedContent = decode content :: Maybe (Map String String)
+    -- Move content from procTbl to historyTbl
+    moveToHistory _ Nothing = return 2
+    moveToHistory letter_ (Just x) =
+      (insertLetter key_ historyTbl (Letter (ident letter_) x))
+      >> removeLetter key_ procTbl (ident letter_)
+      >> commit (key key_) >> return 0
+    -- Steps to update procTbl or historyTbl
+    updating l True = moveToHistory l decodedContent
+    updating l False = run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]
+                       >> commit (key key_) >> return 0

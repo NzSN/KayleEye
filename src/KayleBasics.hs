@@ -1,84 +1,33 @@
--- KayleHome Collect judgements of kayle and then execute if these judgements is right.
+-- file: KayleBasics.hs
 
 {-# LANGUAGE OverloadedStrings #-}
 
-import Debug.Trace
+module KayleBasics where
 
--- Http Request
+import KayleConst
+import Modules.ConfigReader as Config
+
 import Network.HTTP.Client
 import Network.HTTP.Types.Status (statusCode)
 
--- Json
-import Data.Aeson as Aeson
-import Data.Maybe
-import Data.Aeson.Types
-import Data.List.NonEmpty
 import Data.Either
+import Data.Maybe
+
+import Data.String.Conversions (cs)
 import Data.Text.Internal.Lazy as Lazy (Text)
 import Data.Text.Internal as Internal
-import Data.String.Conversions (cs)
 
--- Process, File, Directory
-import System.Process as Process
-import Control.Exception
+import Control.Exception.Base
+
 import System.IO
 import System.Directory
 import System.Environment
+import System.Process as Process
+
 import Control.Concurrent.Thread.Delay
 
 -- Email
 import Network.Mail.SMTP
-
--- Exception
-import Control.Exception.Base
-import System.IO.Error
-
-
-
--- Configuration
-import Modules.ConfigReader
-
--- Homer
-import Homer
-import LetterBox
-import Types
-
--- Socket
-import Network.Socket
-
--- Unit is microseconds
-seconds_micro :: Integer
-seconds_micro = 1000000
-
--- configPath is a url point to gitlab where to store
--- configuration files.
-configPath :: String
-configPath = "git@gpon.git.com:root/CI_Config.git"
-
-main = do
-  -- Spawn http client manager
-  manager <- newManager defaultManagerSettings
-
-  -- Configuration file loaded
-  args <- getArgs
-  configs <- loadConfig (Prelude.head args) configPath
-
-  -- Checking that is the configurations file be choosen is correct
-  let isCorrect = isProjExists (Prelude.head args) configs
-
-  -- Homer initialization
-  homer <- pickHomer "localhost" "8011"
-  -- Box initialization
-  bKey <- boxKeyCreate "127.0.0.1" "aydenlin" "ready" "try"
-  boxInit bKey
-
-  if isCorrect
-    then procRequests homer bKey configs
-    else error "Incorrect configuration file"
-
-procRequests :: Homer -> BoxKey -> Configs -> IO ()
-procRequests homer key_ cfgs = do
-  procRequests homer key_ cfgs
 
 -- Load configuration file from gitlab and then parsing it
 loadConfig :: String -> String -> IO Configs
@@ -103,15 +52,7 @@ loadConfig proj path = do
       let config = fromRight (("error":[]):[]) $ parseConfig contents
       return config
 
-buildHomer :: IO Homer
-buildHomer = do
-  -- fixme: should get prot from configuration
-  addrInfos <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just "8011")
-  let serverAddr = Prelude.head addrInfos
-
-  sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
-  return $ Homer sock (addrAddress serverAddr)
-
+-- Accept an merge request into main branch
 accept :: Manager -> Configs -> IO ()
 accept mng cfgs = do
   args <- getArgs
@@ -137,6 +78,7 @@ accept mng cfgs = do
     -- Success
     200 -> return ()
 
+-- Rebase merge request to target branch
 rebase :: Manager -> Configs -> IO ()
 rebase mng cfgs = do
   args <- getArgs
@@ -153,20 +95,22 @@ rebase mng cfgs = do
     -- Success
     202 -> return ()
 
+-- Put event to http server
 put_req :: String -> Manager -> IO Int
 put_req url mng = do
   initialRequest <- parseRequest url
   response <- httpLbs (initialRequest { method = "PUT" }) mng
   return $ statusCode $ responseStatus response
 
+-- Notify via email
 notify :: Lazy.Text -> Configs -> IO ()
 notify content cfgs = do
   let mailInfo = fromJust $ emailInfoGet $ cfgs
-      host = Prelude.head $ mailInfo
-      user = Prelude.head . Prelude.tail $ mailInfo
-      pass = Prelude.last $ mailInfo
+      hostName = Config.host mailInfo
+      user = Config.user mailInfo
+      pass = Config.pass mailInfo
 
-      adminEmail = (cs $ fromJust $ adminEmailGet $ cfgs) :: Internal.Text
+      adminEmail = (cs $ adminEmailAddr addr) :: Internal.Text
 
   let from = Address Nothing ((cs user) :: Internal.Text)
       to   = [Address (Just "admin") adminEmail]
@@ -176,8 +120,13 @@ notify content cfgs = do
       body    = plainTextPart content
 
   let mail = simpleMail from to cc bcc subject [body]
-  sendMailWithLogin host user pass mail
+  sendMailWithLogin hostName user pass mail
 
+  where addr = case adminEmailGet $ cfgs of
+          Nothing   -> error "Admin email address not found in configuration file"
+          Just addr -> addr
+
+-- Run shell command with args
 run_command :: String -> [String] -> IO Bool
 run_command cmd args = do
   status <- try (callProcess cmd args) :: IO (Either SomeException ())
@@ -185,6 +134,7 @@ run_command cmd args = do
     Left ex -> return False
     Right () -> return True
 
+-- Run shell command (args is within the string of shell command)
 run_command_1 :: String -> IO Bool
 run_command_1 cmd = do
   isSuccess <- try (callCommand cmd) :: IO (Either SomeException ())
@@ -192,21 +142,41 @@ run_command_1 cmd = do
     Left ex -> return False
     Right () -> return True
 
-
+-- Replace '*' character with merge request id
 replace_iid :: String -> String -> String
 replace_iid ('*':xs) iid = iid ++ replace_iid xs iid
 replace_iid (x:xs) iid = x : replace_iid xs iid
 replace_iid "" iid = ""
 
+-- Search option from Configs
 configSearch :: Configs -> String -> [String]
 configSearch configs theConfig = case theConfig of
   "Command" -> case testCmdGet configs of
                  Nothing -> error errorMsg
-                 Just cmd -> cmd:[]
+                 Just cmd -> Config.content cmd
   "AcceptUrl" -> case mrAcceptApiConfig configs of
                    Nothing -> error errorMsg
-                   Just url -> url:[]
+                   Just url -> Config.a_api url : []
   "RebaseUrl" -> case mrRebaseApiConfig configs of
                    Nothing -> error errorMsg
-                   Just url -> url:[]
+                   Just url -> Config.r_api url : []
   where errorMsg = "No " ++ theConfig ++ " found"
+
+configGet :: Configs -> (Configs -> Maybe a) -> String -> a
+configGet cfgs f errMsg = case f cfgs of
+                     Nothing  -> error errMsg
+                     Just opt -> opt
+
+-- Identity Processing functions
+data Identity = Identity { ident_name :: String, ident_sha :: String }
+ident2Str :: Identity -> String
+ident2Str i = (ident_name i) ++ ":" ++ (ident_sha i)
+-- str2Ident :: String -> Identity
+
+identSplit :: String -> [String]
+identSplit [] = [""]
+identSplit all@(x:xs)
+  | x == ':'   = "" : shaPart
+  | otherwise = (x : (head $ identSplit xs)) : tail shaPart
+
+  where shaPart = identSplit xs

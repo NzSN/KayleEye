@@ -1,18 +1,4 @@
-module Modules.ConfigReader (
-  parseConfig,
-  searchConfig,
-  isProjExists,
-  windRiverPathConfig,
-  tempDirPathConfig,
-  mrAccessApiConfig,
-  mrAcceptApiConfig,
-  mrRebaseApiConfig,
-  sourceUrlConfig,
-  listProjConfig,
-  emailInfoGet,
-  adminEmailGet,
-  testCmdGet
-) where
+module Modules.ConfigReader where
 
 import Control.Applicative((<*))
 import Text.Parsec
@@ -24,19 +10,33 @@ import Text.Parsec.Language
 import Data.Maybe
 import Data.List.Split
 
+type Configs = [[String]]
+type Config = [String]
+
+data Projects_cfg = ProjectsConfig_cfg { projName :: String }
+data TestProject_cfg = TestProject_cfg { testName :: String, testContent :: [String]  }
+data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String }
+data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String }
+data AcceptApi_cfg = AcceptApi_cfg { a_api :: String }
+data RebaseApi_cfg = RebaseApi_cfg { r_api :: String }
+data TestContent_cfg = TestContent_cfg { content :: [String] }
+data DatabaseInfo_cfg = DatabaseInfo_cfg
+  { db_host :: String, db_user :: String, db_pass :: String, db :: String }
+data ServerInfo_cfg = ServerInfo_cfg { addr :: String, port :: String }
+
 -- Configuration file parser
-configFile :: GenParser Char st [[String]]
+configFile :: GenParser Char st Configs
 configFile = do
   skipMany configCommentOrBlank
   sepEndBy configOption (char '\n' >> skipMany configCommentOrBlank)
 
-configCommentOrBlank :: GenParser Char st [String]
+configCommentOrBlank :: GenParser Char st Config
 configCommentOrBlank = do
   (char '#' >> many (noneOf "\n")) <|> many mySpace
   eol
   return []
 
-configOption :: GenParser Char st [String]
+configOption :: GenParser Char st Config
 configOption = do
   head <- optHead
   sep  <- optDefSeperate
@@ -51,8 +51,10 @@ optHead = do
          try (string "MRAcceptApi")   <|>
          try (string "MRRebaseApi")   <|>
          try (string "Email")         <|>
-         try (string "Tests")         <|>
-         try (string "AdminEmail")
+         try (string "TestProject")   <|>
+         try (string "Database")      <|>
+         try (string "ServerAddr")    <|>
+         (string "AdminEmail")
   return def
 
 optDefSeperate :: GenParser Char st String
@@ -62,12 +64,12 @@ optDefSeperate = do
   skipMany (try mySpace)
   return ":"
 
-optDef :: GenParser Char st [String]
+optDef :: GenParser Char st Config
 optDef = do
   def <- defStmt
   return def
 
-optDefs :: GenParser Char st [String]
+optDefs :: GenParser Char st Config
 optDefs = do
   eol
   optDefPrefix
@@ -75,24 +77,24 @@ optDefs = do
   xs <- try optDefs <|> return []
   return (x ++ xs)
 
-defStmt :: GenParser Char st [String]
+defStmt :: GenParser Char st Config
 defStmt = do
   ret <- defArray <|> defPair <|> defObj
   return ret
 
-defObj :: GenParser Char st [String]
+defObj :: GenParser Char st Config
 defObj = do
   str <- myString
   return (str:[])
 
-defArray :: GenParser Char st [String]
+defArray :: GenParser Char st Config
 defArray = do
   char '['
   body <- defArray_body
   char ']'
   return body
 
-defArray_body :: GenParser Char st [String]
+defArray_body :: GenParser Char st Config
 defArray_body = do
   skipMany (try mySpace)
 
@@ -101,7 +103,7 @@ defArray_body = do
   strN <- (skipMany (try mySpace) >> char ',' >> defArray_body) <|> return []
   return $ str:strN
 
-defPair :: GenParser Char st [String]
+defPair :: GenParser Char st Config
 defPair = do
   char '('
   left <- myString
@@ -131,10 +133,10 @@ optDefPrefix = do
   spaces
   return "- "
 
-parseConfig :: String -> Either ParseError [[String]]
+parseConfig :: String -> Either ParseError Configs
 parseConfig input = parse configFile "(unknown)" input
 
-searchConfig :: String -> [[String]] -> Maybe [String]
+searchConfig :: String -> Configs -> Maybe Config
 searchConfig optKey [] = Nothing
 searchConfig optKey opts = do
   let result = filter (\(x:xs) -> x == optKey) $ opts
@@ -142,32 +144,32 @@ searchConfig optKey opts = do
     then Nothing
     else return $ tail . head $ result
 
-listProjConfig :: [[String]] -> Maybe [String]
+listProjConfig :: Configs -> Maybe Config
 listProjConfig opts = do
   if prjs == Nothing
     then Nothing
     else return $ fromJust $ prjs
   where prjs = searchConfig "Projects" opts
 
-isProjExists :: String -> [[String]] -> Bool
+isProjExists :: String -> Configs -> Bool
 isProjExists prjName opts = if prjs == Nothing
                                then False
                                else elem True [ x == prjName | x <- (fromJust $ prjs) ]
   where prjs = searchConfig "Projects" opts
 
-windRiverPathConfig :: [[String]] -> Maybe String
+windRiverPathConfig :: Configs -> Maybe String
 windRiverPathConfig [] = Nothing
 windRiverPathConfig opts = do
   path <- searchConfig "WindRiverPath" opts
   return $ head path
 
-tempDirPathConfig :: [[String]] -> Maybe String
+tempDirPathConfig :: Configs -> Maybe String
 tempDirPathConfig [] = Nothing
 tempDirPathConfig opts = do
   path <- searchConfig "TempDirPath" opts
   return $ head path
 
-pairValueSearch :: String -> String -> [[String]] -> Maybe String
+pairValueSearch :: String -> String -> Configs -> Maybe String
 pairValueSearch prjName opt opts = do
   apis <- let mr = searchConfig opt opts
           in if mr == Nothing
@@ -178,33 +180,43 @@ pairValueSearch prjName opt opts = do
      else return $ last $ head [ splitOn " " x | x <- apis, isTheApi x ]
   where isTheApi = (== prjName) . head . splitOn " "
 
-mrAccessApiConfig :: String -> [[String]] -> Maybe String
+mrAccessApiConfig :: String -> Configs -> Maybe String
 mrAccessApiConfig prjName opts = pairValueSearch prjName "MRAccessApi" opts
 
-sourceUrlConfig :: String -> [[String]] -> Maybe String
+sourceUrlConfig :: String -> Configs -> Maybe String
 sourceUrlConfig prjName opts = pairValueSearch prjName "SourceUrl" opts
 
-mrAcceptApiConfig :: [[String]] -> Maybe String
-mrAcceptApiConfig opts = do
-  api <- searchConfig "MRAcceptApi" opts
-  return $ head api
+configRetrive :: Configs -> String -> (Config -> b) -> Maybe b
+configRetrive opts optName f = do
+  let optVals = searchConfig optName opts
 
-mrRebaseApiConfig :: [[String]] -> Maybe String
-mrRebaseApiConfig opts =
-  searchConfig "MRRebaseApi" opts >>= Just . head
+  if isNothing optVals
+    then Nothing
+    else return $ f $ fromJust optVals
 
-emailInfoGet :: [[String]] -> Maybe [String]
-emailInfoGet opts = searchConfig "Email" opts
+mrAcceptApiConfig :: Configs -> Maybe AcceptApi_cfg
+mrAcceptApiConfig opts = configRetrive opts "MRacceptapi" (\cfg -> AcceptApi_cfg $ head cfg)
 
-adminEmailGet :: [[String]] -> Maybe String
-adminEmailGet opts = searchConfig "AdminEmail" opts >>= Just . head
+mrRebaseApiConfig :: Configs -> Maybe RebaseApi_cfg
+mrRebaseApiConfig opts = configRetrive opts "MRRebaseapi" (\cfg -> RebaseApi_cfg $ head cfg)
 
-testCmdGet :: [[String]] -> Maybe String
-testCmdGet opts = do
-  cmd <- searchConfig "TestCmd" opts
-  return $ head cmd
+emailInfoGet :: Configs -> Maybe EmailInfo_cfg
+emailInfoGet opts = configRetrive opts "Email"
+  (\cfg -> EmailInfo_cfg (head cfg) (head . tail $ cfg) (last cfg))
 
-testPiecesGet :: [[String]] -> Maybe [String]
-testPiecesGet opts = do
-  pieces <- searchConfig "Tests" opts
-  return $ tail pieces
+adminEmailGet :: Configs -> Maybe AdminEmailAddr_cfg
+adminEmailGet opts = configRetrive opts "AdminEmail" (\cfg -> AdminEmailAddr_cfg $ head cfg)
+
+testCmdGet :: Configs -> Maybe TestContent_cfg
+testCmdGet opts = configRetrive opts "TestCmd" (\cfg -> TestContent_cfg cfg)
+
+testPiecesGet :: Configs -> Maybe TestProject_cfg
+testPiecesGet opts = configRetrive opts "TestProject" (\cfg -> TestProject_cfg (head cfg) (tail cfg))
+
+databaseGet :: Configs -> Maybe DatabaseInfo_cfg
+databaseGet opts = configRetrive opts "Database"
+  (\cfg -> DatabaseInfo_cfg (head cfg) (tail . head $ cfg) (tail . tail . head $ cfg) (last cfg))
+
+serverInfoGet :: Configs -> Maybe ServerInfo_cfg
+serverInfoGet opts = configRetrive opts "ServerAddr"
+  (\cfg -> ServerInfo_cfg (head cfg) (last cfg))
