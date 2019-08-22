@@ -7,7 +7,7 @@ module Homer where
 
 -- Json
 import Data.Aeson
-import Data.Map
+import Data.Map as Map
 import Data.Maybe
 
 import GHC.Generics
@@ -22,25 +22,26 @@ import Network.Socket.ByteString as BS
 
 data Homer = Homer { rSocket :: Socket, rAddr :: SockAddr }
 
-data Letter = Letter {
-  proj :: String,
-  content :: String,
-  status :: String,
-  ident :: String } deriving Show
+data Letter = Letter { ident :: String, content :: Map String String }
 
 instance ToJSON Letter where
-  toJSON (Letter proj content status ident) =
-    object ["proj" .= proj, "content" .= content, "status" .= status, "ident" .= ident ]
+  toJSON (Letter ident content) =
+    object ["ident" .= ident, "content" .= content]
 
 instance FromJSON Letter where
   parseJSON = withObject "Letter" $ \v -> Letter
-    <$> v .: "proj"
+    <$> v .: "ident"
     <*> v .: "content"
-    <*> v .: "status"
-    <*> v .: "ident"
 
 emptyLetter :: Letter
-emptyLetter = Letter "" "" "" ""
+emptyLetter = Letter "" Map.empty
+
+letterUpdate :: Letter
+             -> String -- Key
+             -> String -- New value
+             -> Letter
+letterUpdate l k nv =
+  Letter (ident l) (updateWithKey (\k_ v_ -> Just nv) k (content l))
 
 pickHomer :: String -- HostName
         -> String -- Port
@@ -55,7 +56,7 @@ pickHomer host port = do
   return $ Homer sock (addrAddress serverAddr)
 
 letterBuild :: Letter -> ByteString
-letterBuild l = encode $ Letter (proj l) (content l) (status l) (ident l)
+letterBuild l = encode $ Letter (ident l) (content l)
 
 homerFlyWith :: Homer -> Letter -> IO ()
 homerFlyWith homer letter =

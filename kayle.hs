@@ -59,17 +59,10 @@ main = do
   args <- getArgs
   configs <- loadConfig (Prelude.head args) configPath
 
-  -- Checking that is the configurations file be choosen is correct
-  let isCorrect = isProjExists (Prelude.head args) configs
+  isPass <- judge $ Prelude.head $ configSearch configs "Command"
+  -- Accept or reject depend on judge result
+  executor isPass manager configs
 
-  if isCorrect
-    -- Do judgement
-    then do isPass <- judge $ Prelude.head $ configSearch configs "Command"
-
-            -- Accept merge request if pass test otherwise exit with non-zero value.
-            executor isPass manager configs
-
-    else error "Incorrect configuration file"
 
 -- Accept if pass test otherwise throw an error
 executor :: Bool -> Manager -> Configs -> IO ()

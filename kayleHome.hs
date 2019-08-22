@@ -40,11 +40,11 @@ import System.IO.Error
 
 -- Homer
 import Homer
+import LetterBox
+import Types
 
 -- Socket
 import Network.Socket
-
-type Configs = [[String]]
 
 -- configPath is a url point to gitlab where to store
 -- configuration files.
@@ -62,18 +62,24 @@ main = do
   -- Checking that is the configurations file be choosen is correct
   let isCorrect = isProjExists (Prelude.head args) configs
 
+  -- Homer initialization
+  homer <- pickHomer "localhost" "8011"
+  -- Box initialization
+  bKey <- boxKeyCreate "127.0.0.1" "aydenlin" "ready" "try"
+  boxInit bKey
+
   if isCorrect
     then procRequests
     else error "Incorrect configuration file"
 
-procRequests :: Configs -> IO ()
-procRequests cfgs = do
-  let homer = buildHomer
+procRequests :: Homer -> BoxKey -> Configs -> IO ()
+procRequests homer key_ cfgs = do
 
   letter <- waitHomer homer
 
-  let proj = proj letter
-      ident = ident letter
+  let ident = ident letter
+  if isLetterExists key_ ident
+     then 
 
   procRequests cfgs
 
@@ -104,7 +110,7 @@ buildHomer :: IO Homer
 buildHomer = do
   -- fixme: should get prot from configuration
   addrInfos <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just "8011")
-  let setverAddr = head addrInfos
+  let setverAddr = Prelude.head addrInfos
 
   sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
   return $ Homer sock (addrAddress serverAddr)

@@ -51,6 +51,7 @@ optHead = do
          try (string "MRAcceptApi")   <|>
          try (string "MRRebaseApi")   <|>
          try (string "Email")         <|>
+         try (string "Tests")         <|>
          try (string "AdminEmail")
   return def
 
@@ -76,13 +77,29 @@ optDefs = do
 
 defStmt :: GenParser Char st [String]
 defStmt = do
-  ret <- defPair <|> defObj
+  ret <- defArray <|> defPair <|> defObj
   return ret
 
 defObj :: GenParser Char st [String]
 defObj = do
   str <- myString
   return (str:[])
+
+defArray :: GenParser Char st [String]
+defArray = do
+  char '['
+  body <- defArray_body
+  char ']'
+  return body
+
+defArray_body :: GenParser Char st [String]
+defArray_body = do
+  skipMany (try mySpace)
+
+  str <- myString
+
+  strN <- (skipMany (try mySpace) >> char ',' >> defArray_body) <|> return []
+  return $ str:strN
 
 defPair :: GenParser Char st [String]
 defPair = do
@@ -186,3 +203,8 @@ testCmdGet :: [[String]] -> Maybe String
 testCmdGet opts = do
   cmd <- searchConfig "TestCmd" opts
   return $ head cmd
+
+testPiecesGet :: [[String]] -> Maybe [String]
+testPiecesGet opts = do
+  pieces <- searchConfig "Tests" opts
+  return $ tail pieces
