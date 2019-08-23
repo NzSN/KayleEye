@@ -29,6 +29,9 @@ import Control.Concurrent.Thread.Delay
 -- Email
 import Network.Mail.SMTP
 
+redirectToNull :: String
+redirectToNull = " 1>/dev/null 2>/dev/null "
+
 -- Load configuration file from gitlab and then parsing it
 loadConfig :: String -> String -> IO Configs
 loadConfig proj path = do
@@ -53,11 +56,13 @@ loadConfig proj path = do
       return config
 
 -- Accept an merge request into main branch
-accept :: Manager -> Configs -> IO ()
-accept mng cfgs = do
+accept :: Manager -> Configs
+       -> String -- iid, Merge request id
+       -> IO ()
+accept mng cfgs iid = do
   args <- getArgs
 
-  let acceptUrl = replace_iid (Prelude.head $ configSearch cfgs "AcceptUrl") (Prelude.last args)
+  let acceptUrl = replace_iid (Prelude.head $ configSearch cfgs "AcceptUrl") iid
   code <- put_req acceptUrl mng
 
   case code of
@@ -67,7 +72,7 @@ accept mng cfgs = do
     405 -> notify "Merge request is unable to be accepted" cfgs
     -- If it has some conflicts and can not be merged - you’ll get a 406 and
     -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs >> delay (3 * seconds_micro) >> print "fixme"
+    406 -> rebase mng cfgs iid >> delay (3 * seconds_micro) >> print "fixme"
     -- If the sha parameter is passed and does not match the HEAD of the source -
     -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
     409 -> notify "SHA does not match HEAD of source branch" cfgs
@@ -79,10 +84,12 @@ accept mng cfgs = do
     200 -> return ()
 
 -- Rebase merge request to target branch
-rebase :: Manager -> Configs -> IO ()
-rebase mng cfgs = do
+rebase :: Manager -> Configs
+       -> String -- iid, Merge request id
+       -> IO ()
+rebase mng cfgs iid = do
   args <- getArgs
-  let rebaseUrl = replace_iid (Prelude.head $ configSearch cfgs "RebaseUrl") (Prelude.last args)
+  let rebaseUrl = replace_iid (Prelude.head $ configSearch cfgs "RebaseUrl") iid
   code <- put_req rebaseUrl mng
 
   case code of
@@ -137,7 +144,7 @@ run_command cmd args = do
 -- Run shell command (args is within the string of shell command)
 run_command_1 :: String -> IO Bool
 run_command_1 cmd = do
-  isSuccess <- try (callCommand cmd) :: IO (Either SomeException ())
+  isSuccess <- try (callCommand $ cmd ++ redirectToNull) :: IO (Either SomeException ())
   case isSuccess of
     Left ex -> return False
     Right () -> return True

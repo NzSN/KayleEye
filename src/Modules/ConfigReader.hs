@@ -13,16 +13,16 @@ import Data.List.Split
 type Configs = [[String]]
 type Config = [String]
 
-data Projects_cfg = ProjectsConfig_cfg { projName :: String }
-data TestProject_cfg = TestProject_cfg { testName :: String, testContent :: [String]  }
-data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String }
-data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String }
-data AcceptApi_cfg = AcceptApi_cfg { a_api :: String }
-data RebaseApi_cfg = RebaseApi_cfg { r_api :: String }
-data TestContent_cfg = TestContent_cfg { content :: [String] }
+data Projects_cfg = ProjectsConfig_cfg { projName :: String } deriving Show
+data TestProject_cfg = TestProject_cfg { testName :: String, testContent :: [String]  } deriving Show
+data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String } deriving Show
+data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
+data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
+data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
+data TestContent_cfg = TestContent_cfg { content :: [String] } deriving Show
 data DatabaseInfo_cfg = DatabaseInfo_cfg
-  { db_host :: String, db_user :: String, db_pass :: String, db :: String }
-data ServerInfo_cfg = ServerInfo_cfg { addr :: String, port :: String }
+  { db_host :: String, db_user :: String, db_pass :: String, db :: String } deriving Show
+data ServerInfo_cfg = ServerInfo_cfg { addr :: String, port :: String } deriving Show
 
 -- Configuration file parser
 configFile :: GenParser Char st Configs
@@ -215,7 +215,7 @@ testPiecesGet opts = configRetrive opts "TestProject" (\cfg -> TestProject_cfg (
 
 databaseGet :: Configs -> Maybe DatabaseInfo_cfg
 databaseGet opts = configRetrive opts "Database"
-  (\cfg -> DatabaseInfo_cfg (head cfg) (tail . head $ cfg) (tail . tail . head $ cfg) (last cfg))
+  (\cfg -> DatabaseInfo_cfg (head cfg) (head . tail $ cfg) (head . tail . tail $ cfg) (last cfg))
 
 serverInfoGet :: Configs -> Maybe ServerInfo_cfg
 serverInfoGet opts = configRetrive opts "ServerAddr"

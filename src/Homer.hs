@@ -9,6 +9,7 @@ module Homer where
 import Data.Aeson
 import Data.Map as Map
 import Data.Maybe
+import Data.List as List
 
 import GHC.Generics
 
@@ -46,26 +47,64 @@ identSplit all@(x:xs)
 data Homer = Homer { rSocket :: Socket, rAddr :: SockAddr }
 
 -- Letter
-data Letter = Letter { ident :: IdentStr, content :: Map String String }
+data Letter = Letter { ident :: IdentStr,
+                       header :: Map String String,
+                       content :: Map String String }
 
 instance ToJSON Letter where
-  toJSON (Letter ident content) =
-    object ["ident" .= ident, "content" .= content]
+  toJSON (Letter ident header content) =
+    object ["ident" .= ident,
+            "header" .= header,
+            "content" .= content]
 
 instance FromJSON Letter where
   parseJSON = withObject "Letter" $ \v -> Letter
     <$> v .: "ident"
+    <*> v .: "header"
     <*> v .: "content"
 
 emptyLetter :: Letter
-emptyLetter = Letter "" Map.empty
+emptyLetter = Letter "" Map.empty Map.empty
 
 letterUpdate :: Letter
              -> String -- Key
-             -> String -- New value
+             -> String -- New Value
              -> Letter
 letterUpdate l k nv =
-  Letter (ident l) (updateWithKey (\k_ v_ -> Just nv) k (content l))
+  Letter (ident l) (header l) (updateWithKey (\k_ v_ -> Just nv) k (content l))
+
+letterUpdate' :: Letter
+              -> [String] -- Keys
+              -> [String] -- New Valuse
+              -> Letter
+letterUpdate' l [] [] = l
+letterUpdate' l kk@(k:ks) vv@(v:vs) =
+  if not $ List.length kk == List.length vv
+  then emptyLetter
+  else letterUpdate' (letterUpdate l k v) ks vs
+
+allKeysOfContent :: Letter -> [String]
+allKeysOfContent l = keys $ content l
+
+retriFromContent :: Letter
+                 -> String -- Key
+                 -> Maybe String
+retriFromContent l k = Map.lookup k (content l)
+retriFromHeader :: Letter
+                -> String -- key
+                -> Maybe String
+retriFromHeader l k = Map.lookup k (header l)
+
+-- Check letter content to see that is test pass
+isTestFinished :: Letter -> Bool
+isTestFinished l = let content_of_l = content l
+                   in Prelude.foldl (\acc x -> acc && x) True
+                      [ (fromJust $ Map.lookup k content_of_l) /= "O" | k <- allKeysOfContent l]
+
+isTestSuccess :: Letter -> Bool
+isTestSuccess l = let content_of_l = content l
+                  in Prelude.foldl (\acc x -> acc && x) True
+                     [ (fromJust $ Map.lookup k content_of_l) == "T" | k <- allKeysOfContent l]
 
 pickHomer :: String -- HostName
         -> String -- Port
@@ -75,12 +114,11 @@ pickHomer host port = do
 
   let serverAddr = Prelude.head addrInfos
   sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
-  setSocketOption sock KeepAlive 1
 
   return $ Homer sock (addrAddress serverAddr)
 
 letterBuild :: Letter -> ByteString
-letterBuild l = encode $ Letter (ident l) (content l)
+letterBuild l = encode $ Letter (ident l) (header l) (content l)
 
 homerFlyWith :: Homer -> Letter -> IO ()
 homerFlyWith homer letter =

@@ -25,14 +25,15 @@ historyTbl = "history"
 databaseCreateStmt :: String
 databaseCreateStmt = "CREATE DATABASE kayleHome"
 
-tableCreateStmt :: String
-tableCreateStmt = "CREATE TABLE ? (" ++
-                  "ident VARCHAR(256)," ++
-                  "content VARCHAR(255)," ++
-                  "PRIMARY KEY(ident))"
+tableCreateStmt :: String -- Table name
+                -> String
+tableCreateStmt tblN = "CREATE TABLE " ++ tblN ++ " (" ++
+                       "ident VARCHAR(50)," ++
+                       "content VARCHAR(255)," ++
+                       "PRIMARY KEY(ident))"
 
 contentUpdateStmt :: String
-contentUpdateStmt = "UPDATE current" ++
+contentUpdateStmt = "UPDATE " ++ procTbl ++
                    "SET content = ?" ++
                    "WHERE ident = ?"
 
@@ -44,8 +45,17 @@ data BoxKey = BoxKey { key :: Connection }
 boxInit :: BoxKey -> IO ()
 boxInit key_ = do
   let conn = key key_
-  run conn tableCreateStmt [toSql procTbl]
-  run conn tableCreateStmt [toSql historyTbl]
+
+  tables <- quickQuery' conn ("SHOW TABLES") []
+  let tblN = Prelude.map (\[sqlTblN] -> fromSql sqlTblN) tables :: [String]
+
+  if elem procTbl tblN
+    then return ()
+    else run conn (tableCreateStmt procTbl) [] >> return ()
+  if elem historyTbl tblN
+    then return ()
+    else run conn (tableCreateStmt historyTbl) [] >> return ()
+
   commit conn
 
 boxKeyCreate :: String -- Host name
@@ -82,8 +92,9 @@ searchLetter key_ tbl ident_ = MaybeT $ do
     else return Nothing
 
   where toLetter :: [SqlValue] -> Letter
-        toLetter [sqlIdent, sqlContent] =
+        toLetter [sqlIdent, sqlHeader, sqlContent] =
           Letter (fromSql sqlIdent)
+          (fromJust $ (decode $ fromSql sqlHeader :: Maybe (Map String String)))
           -- fixme: decode may return Nothing
           (fromJust $ (decode $ fromSql sqlContent :: Maybe (Map String String)))
 
@@ -114,18 +125,18 @@ updateLetter key_ ident_ content status = do
   letter <- runMaybeT $ searchLetter key_ procTbl ident_
 
   if isNothing letter
-    then return 1
+    then return 2
     else updating (fromJust letter) status
 
   where
     -- Decoded letter content
     decodedContent = decode content :: Maybe (Map String String)
     -- Move content from procTbl to historyTbl
-    moveToHistory _ Nothing = return 2
+    moveToHistory _ Nothing = return 3
     moveToHistory letter_ (Just x) =
-      (insertLetter key_ historyTbl (Letter (ident letter_) x))
+      (insertLetter key_ historyTbl (Letter (ident letter_) (header letter_) x))
       >> removeLetter key_ procTbl (ident letter_)
-      >> commit (key key_) >> return 0
+      >> commit (key key_) >> return 1
     -- Steps to update procTbl or historyTbl
     updating l True = moveToHistory l decodedContent
     updating l False = run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]

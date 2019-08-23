@@ -23,13 +23,22 @@ import Control.Monad.Trans.Maybe
 import Network.Socket
 
 -- Map
-import Data.Map
+import Data.Map as Map
+
+-- List
+import Data.List as List
+
+-- Maybe
+import Data.Maybe
+
+-- Json
+import Data.Aeson
 
 -- Homer
-import Homer
+import Homer as H
 import LetterBox
 import KayleConst
-import KayleBasics
+import KayleBasics as K
 
 main = do
   -- Spawn http client manager
@@ -50,30 +59,63 @@ main = do
   -- Database init, Create procTbl and historyTbl if not exists
   boxInit bKey
 
-  procRequests homer bKey configs
+  procRequests manager homer bKey configs
 
 
-procRequests :: Homer -> BoxKey -> Configs -> IO ()
-procRequests homer key_ cfgs = do
-  letter <- waitHomer homer
+procRequests :: Manager -> Homer -> BoxKey -> Configs -> IO ()
+procRequests mng homer key_ cfgs =
+  let proc letter =
+        -- Is letter already in history table, which means its already done previous
+        (isLetterExists key_ historyTbl (ident letter)) >>= nextRequests''
+        -- Is already in processing
+        >> (isLetterExists key_ procTbl (ident letter))
+        >>= (\isExists_proc -> if isExists_proc then (proc_in letter) else (proc_new letter))
 
-  isExists_history <- isLetterExists key_ historyTbl (ident letter)
+      -- Function to Processing letters that in procTable
+      proc_in letter =
+        -- Search Letter from letterBox via the identity of received letter
+        (runMaybeT $ searchLetter key_ procTbl (ident letter))
+        -- If there is no such a letter in letterBox then just ignore the letter
+        >>= (\x -> nextRequests' x >> (return $ fromJust x))
+        -- Update the letter we just get from letterBox
+        >>= (\x -> let content = H.content x
+                   in return $ letterUpdate' x (allKeysOfContent x)
+                      -- lookup function must return non nothng value here
+                      [ fromJust $ Map.lookup k content | k <- allKeysOfContent x ])
+        -- To check that is the test recorded by the letter has been done
+        -- Store the letter into proc table or history depend of the state of letter
+        >>= (\x -> updateLetter key_ (H.ident x) (encode $ H.content x) $ isTestFinished x)
+        >>= (\x -> if x == 1 && isTestSuccess letter
+                      -- retriFromHeader must not return Nothing here
+                      -- accept the merge request is such case
+                   then K.accept mng cfgs (fromJust $ retriFromHeader letter "iid")
+                        -- Notification when test failed is not need
+                        -- case buildbot will do that.
+                   else return () )
+        -- After all pending for next request
+        >> nextRequests
 
-  if isExists_history then nextRequests else return ()
+      -- Function to processing letters that first arrived
+      proc_new letter =
+        -- Generate an letter base on configuration and the received letter
+        (return $ letterInit cfgs letter)
+        -- If generation failed, which means the letter's project name can not match
+        -- any test within configuration file, just ignore the letter and jump to next request
+        >>= (\x -> nextRequests' x >> return x)
+        -- Store the letter generated just now into letterBox
+        >>= (\x -> insertLetter key_ procTbl (fromJust x))
+        -- After all pending for next request
+        >> nextRequests
 
-  isExists_proc <- isLetterExists key_ procTbl (ident letter)
-  if isExists_proc
-    then do letter_ <- searchLetter_proc key_ (ident letter)
-            nextRequests
-    else insertLetter key_ procTbl letter >> nextRequests
+  in (waitHomer homer) >>= proc
 
-  where nextRequests = procRequests homer key_ cfgs
-
-        searchLetter_proc key ident_ = do
-          letter_m <- runMaybeT $ searchLetter key procTbl ident_
-          case letter_m of
-            Nothing -> error "Letter not found"
-            Just l -> return l
+  where
+    -- Immediately to wait to next requests
+    nextRequests = procRequests mng homer key_ cfgs
+    -- Immediately to wait to next requests, accept Maybe type
+    nextRequests' x = if isNothing x then nextRequests else return ()
+    -- Immediately to wait to next requests, accept Bool
+    nextRequests'' x = if x then nextRequests else return ()
 
 -- Generate a letter via exists letter and configuration
 letterInit :: Configs -> Letter -> Maybe Letter
@@ -82,7 +124,13 @@ letterInit cfgs l = do
 
   if (ident_name ident_) == (testName tProj)
     then Nothing
-    else return $ Letter (ident l) (fromList [(x, "F") | x <- tContents ])
+    else return $ Letter (ident l) (header l)
+         (fromList [ if elem x allKeys
+                     then (x, lookup' x (H.content l))
+                     else (x, "O")
+                   | x <- tContents ])
 
   where tProj = configGet cfgs testPiecesGet test_proj_err_msg
         tContents = testContent tProj
+        allKeys = keys $ H.content l
+        lookup' k m = if isNothing $ Map.lookup k m then "O" else "T"

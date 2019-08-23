@@ -16,14 +16,17 @@ import Modules.ConfigReader
 import KayleConst
 import KayleBasics
 
+import Homer
+
 type Revision = String
 type JudgeContent = String
 
 main = do
-
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) configPath
+
+
 
   isPass <- judge $ Prelude.head $ configSearch configs "Command"
   -- Accept or reject depend on judge result
