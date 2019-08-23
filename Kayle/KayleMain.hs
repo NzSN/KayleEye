@@ -11,6 +11,7 @@ import System.Environment
 
 -- Configuration
 import Modules.ConfigReader
+import Control.Monad.Reader
 
 -- Constants
 import KayleConst
@@ -21,27 +22,24 @@ import Homer
 type Revision = String
 type JudgeContent = String
 
-main = do
-  -- Configuration file loaded
-  args <- getArgs
-  configs <- loadConfig (Prelude.head args) configPath
-
-
-
-  isPass <- judge $ Prelude.head $ configSearch configs "Command"
-  -- Accept or reject depend on judge result
-  executor isPass configs
-
+main =
+  let f = (\p ->
+             -- Init Homer
+              let serverOpts = configGet (snd p)  serverInfoGet serverAddr_err_msg
+              in (pickHomer (addr serverOpts) (port serverOpts))
+              >>= (\x ->
+                     -- Testing
+                     (judge $ Prelude.head $ configSearch (snd p) "Command")
+                    >>= (\isPass -> executor x isPass (snd p))))
+  -- Get arguments and configurations
+  in getArgs >>= (\args -> loadConfig (Prelude.head args) configPath >>= (\config -> return (args, config))) >>= f
 
 -- Accept if pass test otherwise throw an error
-executor :: Bool -> Configs -> IO ()
-executor True c = print "fixme"
-executor False c = error "Test failed"
+executor :: Homer -> Bool -> Configs -> IO ()
+executor h True c = print "fixme"
+executor h False c = error "Test failed"
 
 judge :: JudgeContent -> IO Bool
 judge c = do
   isSuccess <- run_command_1 c
   return isSuccess
-
--- Accept, this function will notify kayleHome the part test
--- current instance is pass

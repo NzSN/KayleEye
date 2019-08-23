@@ -49,6 +49,7 @@ dependencies:
 - network
 - network-bsd
 - text
+- mtl
 
 library:
   source-dirs: src
