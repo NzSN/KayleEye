@@ -110,12 +110,12 @@ pickHomer :: String -- HostName
         -> String -- Port
         -> IO Homer
 pickHomer host port = do
-  addrInfos <- getAddrInfo Nothing (Just host) (Just port)
+    addrInfos <- getAddrInfo Nothing (Just host) (Just port)
 
-  let serverAddr = Prelude.head addrInfos
-  sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
+    let serverAddr = Prelude.head addrInfos
+    sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
 
-  return $ Homer sock (addrAddress serverAddr)
+    return $ Homer sock (addrAddress serverAddr)
 
 letterBuild :: Letter -> ByteString
 letterBuild l = encode $ Letter (ident l) (header l) (content l)

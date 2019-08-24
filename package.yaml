@@ -50,6 +50,7 @@ dependencies:
 - network-bsd
 - text
 - mtl
+- HUnit
 
 library:
   source-dirs: src
