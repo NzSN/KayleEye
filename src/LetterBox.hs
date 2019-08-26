@@ -3,7 +3,7 @@
 module LetterBox where
 
 import Data.Aeson
-import Data.Map
+import Data.Map as Map
 import Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class
 
@@ -14,6 +14,9 @@ import Data.Maybe
 import Data.ByteString.Lazy.Internal
 
 import Homer
+
+-- Unit Testing
+import Test.HUnit
 
 procTbl :: String
 procTbl = "processing"
@@ -34,11 +37,11 @@ tableCreateStmt tblN = "CREATE TABLE " ++ tblN ++ " (" ++
 
 contentUpdateStmt :: String
 contentUpdateStmt = "UPDATE " ++ procTbl ++
-                   "SET content = ?" ++
-                   "WHERE ident = ?"
+                   " SET content = ?" ++
+                   " WHERE ident = ?"
 
-searchLetterStmt :: String
-searchLetterStmt = "SELECT proj,content,status,ident FROM ? WHERE ident = ?"
+searchLetterStmt :: String -> String
+searchLetterStmt tblN = "SELECT ident,content FROM " ++ tblN ++ " WHERE ident = ?"
 
 data BoxKey = BoxKey { key :: Connection }
 
@@ -77,8 +80,8 @@ insertLetter :: BoxKey
              -> Letter
              -> IO ()
 insertLetter key_ tblN letter = do
-  run (key key_) "INSERT INTO ? VALUES (?, ?)"
-    [toSql tblN, toSql (ident letter), toSql (encode $ (content letter))]
+  run (key key_) ("INSERT INTO " ++ tblN ++ " VALUES (?, ?)")
+    [toSql (ident letter), toSql (encode $ (content letter))]
   commit (key key_)
 
 searchLetter :: BoxKey
@@ -86,15 +89,14 @@ searchLetter :: BoxKey
              -> String -- Identity
              -> MaybeT IO Letter
 searchLetter key_ tbl ident_ = MaybeT $ do
-  letters <- quickQuery' (key key_) searchLetterStmt [toSql tbl, toSql ident_]
+  letters <- quickQuery' (key key_) (searchLetterStmt tbl) [toSql ident_]
   if not $ Prelude.null letters
     then return $ Just $ head $ Prelude.map toLetter letters
     else return Nothing
 
   where toLetter :: [SqlValue] -> Letter
-        toLetter [sqlIdent, sqlHeader, sqlContent] =
-          Letter (fromSql sqlIdent)
-          (fromJust $ (decode $ fromSql sqlHeader :: Maybe (Map String String)))
+        toLetter [sqlIdent, sqlContent] =
+          Letter (fromSql sqlIdent) Map.empty
           -- fixme: decode may return Nothing
           (fromJust $ (decode $ fromSql sqlContent :: Maybe (Map String String)))
 
@@ -103,7 +105,7 @@ removeLetter :: BoxKey
              -> String -- Identity
              -> IO ()
 removeLetter key_ tbl ident_ = do
-  run (key key_) "DELETE FROM ? WHERE ident = ?" [toSql tbl, toSql ident_]
+  run (key key_) ("DELETE FROM " ++ tbl ++ " WHERE ident = ?") [toSql ident_]
   commit (key key_)
 
 isLetterExists :: BoxKey
@@ -141,3 +143,54 @@ updateLetter key_ ident_ content status = do
     updating l True = moveToHistory l decodedContent
     updating l False = run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]
                        >> commit (key key_) >> return 0
+
+-- Test cases
+boxTest :: Test
+boxTest = TestList [TestLabel "Box Insert,Search,Delete: " (TestCase boxAssert),
+                    TestLabel "Box Update: " (TestCase boxAssert_Update),
+                    TestLabel "Box IsExists" (TestCase boxAssert_isExists)]
+  where boxAssert :: Assertion
+        boxAssert = do
+          key <- boxKeyCreate "127.0.0.1" "aydenlin" "ready" "try"
+          -- Init test db
+          boxInit key
+
+          -- Insert, Search, Delete
+          insertLetter key procTbl l
+          l_r <- runMaybeT $ searchLetter key procTbl (ident l)
+          removeLetter key procTbl (ident l)
+
+          assertEqual "Insert, Search, Delete:" False (isNothing l_r)
+
+        boxAssert_Update :: Assertion
+        boxAssert_Update = do
+          key <- boxKeyCreate "127.0.0.1" "aydenlin" "ready" "try"
+          -- Init test db
+          boxInit key
+
+          -- Update
+          let n_content = encode $ fromList [("N_T1", "N_T")]
+
+          insertLetter key procTbl l
+          updateLetter key (ident l) n_content False
+          l_r_u <- runMaybeT $ searchLetter key procTbl (ident l)
+          removeLetter key procTbl (ident l)
+
+          let u_content = content $ fromJust $ l_r_u
+          assertEqual "Update" False (isNothing $ Map.lookup "N_T1" u_content)
+
+        boxAssert_isExists :: Assertion
+        boxAssert_isExists = do
+          key <- boxKeyCreate "127.0.0.1" "aydenlin" "ready" "try"
+          -- Init test db
+          boxInit key
+
+          insertLetter key procTbl l
+          isExists <- isLetterExists key procTbl (ident l)
+          removeLetter key procTbl (ident l)
+
+          assertEqual "IsExists" True isExists
+
+        l = Letter (ident2Str $ Identity "item1" "12345")
+            (fromList [("iid", "1")])
+            (fromList [("T1", "T")])

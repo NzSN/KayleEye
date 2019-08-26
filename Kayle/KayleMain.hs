@@ -25,11 +25,11 @@ type Revision = String
 type JudgeContent = String
 
 main :: IO ()
-main = let c args = (loadConfig (Prelude.head args) configPath)
+main = let c args = (loadConfig (head args) configPath)
                     >>= (\config -> return (args, config)) >>= f
-           f p = let serverOpts = configGet (snd p)  serverInfoGet serverAddr_err_msg
+           f p = let serverOpts = configGet (snd p) serverInfoGet serverAddr_err_msg
                      -- Testing
-                     testing h = (judge $ Prelude.head $ configSearch (snd p) "Command")
+                     testing h = (judge $ head $ configSearch (snd p) "Command")
                                  >>= (\isPass -> notify h (fst p) isPass)
                  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
   -- Get arguments and configurations
@@ -39,11 +39,13 @@ main = let c args = (loadConfig (Prelude.head args) configPath)
 notify :: Homer -> [String] -> Bool -> IO ()
 notify h args False = notify' h args (fromList [(head args, "F")])
 notify h args True = notify' h args (fromList [(head args, "T")])
+
+notify' :: Homer -> [String] -> Map String String -> IO ()
 notify' homer args c = let i = ident2Str $ Identity (head args) (last args)
                            h = fromList [("iid", (head . tail $ args))]
                            c = fromList [(head args, "T")]
                            l = Letter i h c
-                       in homerFlyWith homer l
+                       in homerFlyWith homer l >> return ()
 
 judge :: JudgeContent -> IO Bool
 judge c = do

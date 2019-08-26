@@ -1,7 +1,10 @@
 import Test.HUnit
 
-test1 = TestCase (assertEqual "Not Equal" 1 2)
-tests = TestList [TestLabel "test1" test1]
+import LetterBox
+import Homer
+
+tests = TestList [TestLabel "boxTest" boxTest,
+                  TestLabel "homerTest" homerTest]
 
 main = do
   runTestTT tests

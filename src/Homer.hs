@@ -13,6 +13,11 @@ import Data.List as List
 
 import GHC.Generics
 
+-- Testing purpose
+import Control.Concurrent
+import Test.HUnit
+import Control.Concurrent.Thread.Delay
+
 -- Socket
 import Network.Socket
 import System.IO
@@ -49,7 +54,7 @@ data Homer = Homer { rSocket :: Socket, rAddr :: SockAddr }
 -- Letter
 data Letter = Letter { ident :: IdentStr,
                        header :: Map String String,
-                       content :: Map String String }
+                       content :: Map String String } deriving Show
 
 instance ToJSON Letter where
   toJSON (Letter ident header content) =
@@ -74,14 +79,11 @@ letterUpdate l k nv =
   Letter (ident l) (header l) (updateWithKey (\k_ v_ -> Just nv) k (content l))
 
 letterUpdate' :: Letter
-              -> [String] -- Keys
-              -> [String] -- New Valuse
+              -> [(String, String)]
               -> Letter
-letterUpdate' l [] [] = l
-letterUpdate' l kk@(k:ks) vv@(v:vs) =
-  if not $ List.length kk == List.length vv
-  then emptyLetter
-  else letterUpdate' (letterUpdate l k v) ks vs
+letterUpdate' l [] = l
+letterUpdate' l (k:ks) = do
+  letterUpdate' (letterUpdate l (fst k) (snd k)) ks
 
 allKeysOfContent :: Letter -> [String]
 allKeysOfContent l = keys $ content l
@@ -117,18 +119,79 @@ pickHomer host port = do
 
     return $ Homer sock (addrAddress serverAddr)
 
+pickHomer' :: String -> String -> IO Homer
+pickHomer' host port = do
+    addrInfos <- getAddrInfo Nothing (Just host) (Just port)
+
+    let serverAddr = Prelude.head addrInfos
+    sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
+    bind sock (addrAddress serverAddr)
+
+    return $ Homer sock (addrAddress serverAddr)
+
+
 letterBuild :: Letter -> ByteString
 letterBuild l = encode $ Letter (ident l) (header l) (content l)
 
-homerFlyWith :: Homer -> Letter -> IO ()
-homerFlyWith homer letter =
-  BS.sendTo (rSocket homer) (toStrict $ letterBuild letter) (rAddr homer) >> return ()
+homerFlyWith :: Homer -> Letter -> IO Int
+homerFlyWith homer letter = do
+  let letterStr = toStrict $ letterBuild letter
+  BS.sendTo (rSocket homer) letterStr (rAddr homer)
 
 waitHomer :: Homer -> IO Letter
 waitHomer homer = do
   (rawLetter_, addr) <- BS.recvFrom (rSocket homer) 1024
 
   let letter = (decode $ fromStrict rawLetter_ :: Maybe Letter)
+
   if isNothing letter
     then return $ emptyLetter
     else return $ fromJust letter
+
+-- Test cases
+
+homerTest :: Test
+homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
+                      TestLabel "Letter update" (TestCase homerAssert1),
+                      TestLabel "Letter updates" (TestCase homerAssert2)]
+  where homerAssert = do
+          homer_recv <- pickHomer' "localhost" "8011"
+          homer_send <- pickHomer "localhost" "8011"
+
+          m <- newEmptyMVar
+          -- Server
+          forkIO $ waitHomer homer_recv
+            >>= (\x -> check x m)
+            >> return ()
+
+          -- Client
+          forkIO $ delay 1000000 >> homerFlyWith homer_send l >> return ()
+
+          r <- takeMVar m
+          assertEqual "HomerTest" 't' r
+
+        l = Letter (ident2Str $ Identity "item1" "12345")
+            (fromList [("iid", "1")])
+            (fromList [("T1", "T")])
+        l1 = Letter (ident2Str $ Identity "item1" "12345")
+             (fromList [("iid", "1")])
+             (fromList [("T1", "T"), ("T2", "T")])
+
+        check l_ m =
+          let identCheck = (ident l_) == (ident l)
+              headerCheck = (Map.lookup "iid" (header l_)) == (Map.lookup "iid" (header l))
+              contentCheck = (Map.lookup "T1" (content l_)) == (Map.lookup "T1" (content l))
+          in if identCheck && headerCheck && contentCheck
+             then putMVar m 't'
+             else putMVar m 'f'
+
+        homerAssert1 = do
+          let updated_value = "UPDATED_VALUE"
+              l_u = letterUpdate l "T1" updated_value
+          assertEqual "Letter update" (Just updated_value) (retriFromContent l_u "T1")
+
+        homerAssert2 = do
+          let updated_value = "UPDATED_VALUE"
+              l_u = letterUpdate' l1 [("T1", updated_value), ("T2", updated_value)]
+          assertEqual "Letter updates" True ((retriFromContent l_u "T1") == (Just updated_value) &&
+                                             (retriFromContent l_u "T2") == (Just updated_value))

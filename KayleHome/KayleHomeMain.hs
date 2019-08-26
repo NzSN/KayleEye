@@ -50,7 +50,7 @@ main = do
 
   -- Homer initialization
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
-  homer <- pickHomer (C.addr serverOpts) (C.port serverOpts)
+  homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
 
   -- Box initialization
   let dbOpts = configGet configs databaseGet db_err_msg
@@ -69,6 +69,7 @@ procRequests mng homer key_ cfgs =
         (isLetterExists key_ historyTbl (ident letter)) >>= nextRequests''
         -- Is already in processing
         >> (isLetterExists key_ procTbl (ident letter))
+        -- Processing the letter
         >>= (\isExists_proc -> if isExists_proc then (proc_in letter) else (proc_new letter))
 
       -- Function to Processing letters that in procTable
@@ -79,9 +80,9 @@ procRequests mng homer key_ cfgs =
         >>= (\x -> nextRequests' x >> (return $ fromJust x))
         -- Update the letter we just get from letterBox
         >>= (\x -> let content = H.content x
-                   in return $ letterUpdate' x (allKeysOfContent x)
+                   in return $ letterUpdate' x
                       -- lookup function must return non nothng value here
-                      [ fromJust $ Map.lookup k content | k <- allKeysOfContent x ])
+                      [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent x ])
         -- To check that is the test recorded by the letter has been done
         -- Store the letter into proc table or history depend of the state of letter
         >>= (\x -> updateLetter key_ (H.ident x) (encode $ H.content x) $ isTestFinished x)
