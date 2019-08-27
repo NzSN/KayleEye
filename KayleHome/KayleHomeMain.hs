@@ -79,13 +79,13 @@ procRequests mng homer key_ cfgs =
         -- If there is no such a letter in letterBox then just ignore the letter
         >>= (\x -> nextRequests' x >> (return $ fromJust x))
         -- Update the letter we just get from letterBox
-        >>= (\x -> let content = H.content x
+        >>= (\x -> let content = H.content letter
                    in return $ letterUpdate' x
                       -- lookup function must return non nothng value here
-                      [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent x ])
+                      [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent letter ])
         -- To check that is the test recorded by the letter has been done
         -- Store the letter into proc table or history depend of the state of letter
-        >>= (\x -> updateLetter key_ (H.ident x) (encode $ H.content x) $ isTestFinished x)
+        >>= (\x -> (updateLetter key_ (H.ident x) (encode $ H.content x) $ isTestFinished x))
         >>= (\x -> if x == 1 && isTestSuccess letter
                       -- retriFromHeader must not return Nothing here
                       -- accept the merge request is such case
@@ -108,7 +108,8 @@ procRequests mng homer key_ cfgs =
         -- After all pending for next request
         >> nextRequests
 
-  in print "Ready to process requests" >> (waitHomer homer) >>= proc
+  in print "Ready to process requests" >> (waitHomer homer) 
+     >>= (\x -> (print x) >> (proc x))
 
   where
     -- Immediately to wait to next requests
@@ -124,13 +125,12 @@ letterInit cfgs l = do
   let ident_ = str2Ident (ident l)
 
   if (ident_name ident_) == (testName tProj)
-    then Nothing
-    else return $ Letter (ident l) (header l)
+    then return $ Letter (ident l) (header l)
          (fromList [ if elem x allKeys
                      then (x, lookup' x (H.content l))
                      else (x, "O")
                    | x <- tContents ])
-
+    else Nothing
   where tProj = configGet cfgs testPiecesGet test_proj_err_msg
         tContents = testContent tProj
         allKeys = keys $ H.content l

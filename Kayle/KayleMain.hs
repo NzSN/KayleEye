@@ -35,8 +35,8 @@ getKayleArgs = do
   args <- getArgs
   return $ KayleArgs (head args)
     (head . tail $ args)
+    (last $ args)
     (head . tail . tail $ args)
-    (last args)
 
 main :: IO ()
 main = let c args = (loadConfig cfile configPath)
@@ -53,8 +53,8 @@ main = let c args = (loadConfig cfile configPath)
 
 -- Accept if pass test otherwise throw an error
 notify :: Homer -> KayleArgs -> Bool -> IO ()
-notify h args False = notify' h args (fromList [(iid args, "F")])
-notify h args True = notify' h args (fromList [(iid args, "T")])
+notify h args False = notify' h args (fromList [(target args, "F")])
+notify h args True = notify' h args (fromList [(target args, "T")])
 
 notify' :: Homer -> KayleArgs -> Map String String -> IO ()
 notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
