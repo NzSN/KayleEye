@@ -195,7 +195,7 @@ configRetrive opts optName f = do
     else return $ f $ fromJust optVals
 
 mrAcceptApiConfig :: Configs -> Maybe AcceptApi_cfg
-mrAcceptApiConfig opts = configRetrive opts "MRacceptapi" (\cfg -> AcceptApi_cfg $ head cfg)
+mrAcceptApiConfig opts = configRetrive opts "MRAcceptapi" (\cfg -> AcceptApi_cfg $ head cfg)
 
 mrRebaseApiConfig :: Configs -> Maybe RebaseApi_cfg
 mrRebaseApiConfig opts = configRetrive opts "MRRebaseapi" (\cfg -> RebaseApi_cfg $ head cfg)
