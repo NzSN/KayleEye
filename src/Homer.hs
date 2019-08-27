@@ -153,7 +153,8 @@ waitHomer homer = do
 homerTest :: Test
 homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
                       TestLabel "Letter update" (TestCase homerAssert1),
-                      TestLabel "Letter updates" (TestCase homerAssert2)]
+                      TestLabel "Letter updates" (TestCase homerAssert2),
+                      TestLabel "Letter Header Retri" (TestCase homerAssert3)]
   where homerAssert = do
           homer_recv <- pickHomer' "localhost" "8011"
           homer_send <- pickHomer "localhost" "8011"
@@ -195,3 +196,6 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
               l_u = letterUpdate' l1 [("T1", updated_value), ("T2", updated_value)]
           assertEqual "Letter updates" True ((retriFromContent l_u "T1") == (Just updated_value) &&
                                              (retriFromContent l_u "T2") == (Just updated_value))
+
+        homerAssert3 = do
+          assertEqual "Letter Header Retri" (Just "1") (retriFromHeader l "iid")

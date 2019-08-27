@@ -24,26 +24,41 @@ import Homer
 type Revision = String
 type JudgeContent = String
 
+data KayleArgs = KayleArgs {
+  proj :: String,
+  target :: String,
+  sha :: String,
+  iid :: String } deriving Show
+
+getKayleArgs :: IO KayleArgs
+getKayleArgs = do
+  args <- getArgs
+  return $ KayleArgs (head args)
+    (head . tail $ args)
+    (head . tail . tail $ args)
+    (last args)
+
 main :: IO ()
-main = let c args = (loadConfig (head args) configPath)
+main = let c args = (loadConfig cfile configPath)
                     >>= (\config -> return (args, config)) >>= f
+             where cfile = (proj args) ++ "_" ++ (target args)
+
            f p = let serverOpts = configGet (snd p) serverInfoGet serverAddr_err_msg
                      -- Testing
                      testing h = (judge $ head $ configSearch (snd p) "Command")
                                  >>= (\isPass -> notify h (fst p) isPass)
                  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
   -- Get arguments and configurations
-       in getArgs >>= c
+       in getKayleArgs >>= c
 
 -- Accept if pass test otherwise throw an error
-notify :: Homer -> [String] -> Bool -> IO ()
-notify h args False = notify' h args (fromList [(head args, "F")])
-notify h args True = notify' h args (fromList [(head args, "T")])
+notify :: Homer -> KayleArgs -> Bool -> IO ()
+notify h args False = notify' h args (fromList [(iid args, "F")])
+notify h args True = notify' h args (fromList [(iid args, "T")])
 
-notify' :: Homer -> [String] -> Map String String -> IO ()
-notify' homer args c = let i = ident2Str $ Identity (head args) (last args)
-                           h = fromList [("iid", (head . tail $ args))]
-                           c = fromList [(head args, "T")]
+notify' :: Homer -> KayleArgs -> Map String String -> IO ()
+notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
+                           h = fromList [("iid", (iid args))]
                            l = Letter i h c
                        in homerFlyWith homer l >> return ()
 

@@ -92,7 +92,7 @@ procRequests mng homer key_ cfgs =
                    then K.accept mng cfgs (fromJust $ retriFromHeader letter "iid")
                         -- Notification when test failed is not need
                         -- case buildbot will do that.
-                   else return () )
+                   else return ())
         -- After all pending for next request
         >> nextRequests
 
