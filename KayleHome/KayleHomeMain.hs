@@ -108,7 +108,7 @@ procRequests mng homer key_ cfgs =
         -- After all pending for next request
         >> nextRequests
 
-  in (waitHomer homer) >>= proc
+  in print "Ready to process requests" >> (waitHomer homer) >>= proc
 
   where
     -- Immediately to wait to next requests
