@@ -22,9 +22,8 @@ loggerTest = TestList [TestLabel "Logger put" (TestCase loggerAssert)]
   where loggerAssert :: Assertion
         loggerAssert = do
           let l = do
+                tell "hello"
                 (return 6 :: Logger Int)
-              c = runReaderT . runWriterT $ l
+          c <- (runReaderT . runWriterT $ l) ["123"]
 
-          ((c ["123"]) >>= print)
-
-          assertEqual "LoggerPut" 1 1
+          assertEqual "LoggerPut"  True (6 == (fst c) && "hello" == (snd c))
