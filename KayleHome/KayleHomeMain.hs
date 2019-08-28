@@ -61,7 +61,6 @@ main = do
 
   procRequests manager homer bKey configs
 
-
 procRequests :: Manager -> Homer -> BoxKey -> Configs -> IO ()
 procRequests mng homer key_ cfgs =
   let proc letter =

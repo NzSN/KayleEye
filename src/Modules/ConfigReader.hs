@@ -19,7 +19,7 @@ data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: Str
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
 data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
 data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
-data TestContent_cfg = TestContent_cfg { content :: [String] } deriving Show
+data TestContent_cfg = TestContent_cfg { content :: [String] } | TestContent_None deriving Show
 data DatabaseInfo_cfg = DatabaseInfo_cfg
   { db_host :: String, db_user :: String, db_pass :: String, db :: String } deriving Show
 data ServerInfo_cfg = ServerInfo_cfg { addr :: String, port :: String } deriving Show

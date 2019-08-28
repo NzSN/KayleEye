@@ -10,9 +10,10 @@ import Debug.Trace
 -- Process, File, Directory
 import System.Environment
 import Data.Map
+import Data.Maybe
 
 -- Configuration
-import Modules.ConfigReader
+import Modules.ConfigReader as C
 import Control.Monad.Reader
 
 -- Constants
@@ -45,7 +46,7 @@ main = let c args = (loadConfig cfile configPath)
 
            f p = let serverOpts = configGet (snd p) serverInfoGet serverAddr_err_msg
                      -- Testing
-                     testing h = (judge $ head $ configSearch (snd p) "Command")
+                     testing h = (judge $ fromJust $ testCmdGet (snd p))
                                  >>= (\isPass -> notify h (fst p) isPass)
                  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
   -- Get arguments and configurations
@@ -62,7 +63,14 @@ notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
                            l = Letter i h c
                        in homerFlyWith homer l >> return ()
 
-judge :: JudgeContent -> IO Bool
+judge :: TestContent_cfg -> IO Bool
+judge TestContent_None = return True
 judge c = do
-  isSuccess <- run_command_1 c
-  return isSuccess
+  let cmds = C.content c
+
+  isSuccess <- run_command_1 (head $ cmds)
+  isSubSuccess <- case Prelude.null $ tail cmds of
+                    True -> judge TestContent_None
+                    False -> judge $ TestContent_cfg (tail cmds)
+
+  return $ isSuccess && isSubSuccess
