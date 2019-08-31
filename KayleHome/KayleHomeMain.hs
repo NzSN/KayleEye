@@ -47,6 +47,7 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) configPath
+  print configs
 
   -- Homer initialization
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg

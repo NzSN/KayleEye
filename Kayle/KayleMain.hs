@@ -41,7 +41,7 @@ getKayleArgs = do
 
 main :: IO ()
 main = let c args = (loadConfig cfile configPath)
-                    >>= (\config -> return (args, config)) >>= f
+                    >>= (\config -> (print config) >> (return (args, config)) ) >>= f
              where cfile = (proj args) ++ "_" ++ (target args)
 
            f p = let serverOpts = configGet (snd p) serverInfoGet serverAddr_err_msg

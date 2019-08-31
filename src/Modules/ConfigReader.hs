@@ -119,7 +119,7 @@ eol = try (char '\n') <|>
       fail "Error: Can't find end of line"
 
 myString :: GenParser Char st String
-myString = many (noneOf " \n,(){}[]")
+myString = many (noneOf "\n,(){}[]")
 
 mySpace :: GenParser Char st Char
 mySpace = do

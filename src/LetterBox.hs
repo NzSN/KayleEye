@@ -90,6 +90,7 @@ searchLetter :: BoxKey
              -> MaybeT IO Letter
 searchLetter key_ tbl ident_ = MaybeT $ do
   letters <- quickQuery' (key key_) (searchLetterStmt tbl) [toSql ident_]
+
   if not $ Prelude.null letters
     then return $ Just $ head $ Prelude.map toLetter letters
     else return Nothing
@@ -114,7 +115,7 @@ isLetterExists :: BoxKey
                -> IO Bool
 isLetterExists key_ tbl ident_ = do
   letter <- runMaybeT $ searchLetter key_ tbl ident_
-  if Prelude.null letter
+  if isNothing letter
     then return False
     else return True
 
