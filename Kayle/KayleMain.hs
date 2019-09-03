@@ -17,7 +17,7 @@ import Modules.ConfigReader as C
 import Control.Monad.Reader
 
 -- Constants
-import KayleConst
+import qualified KayleConst as KConst
 import KayleBasics hiding (notify)
 
 import Homer
@@ -29,29 +29,31 @@ data KayleArgs = KayleArgs {
   proj :: String,
   target :: String,
   sha :: String,
-  iid :: String } deriving Show
+  iid :: String,
+  configPath :: String } deriving Show
 
 getKayleArgs :: IO KayleArgs
 getKayleArgs = do
   args <- getArgs
   return $ KayleArgs (head args)
     (head . tail $ args)
-    (last $ args)
+    (head . tail . tail . tail $ args)
     (head . tail . tail $ args)
+    (last $ args)
 
 main :: IO ()
-main = let c args = (loadConfig cfile configPath)
+main = let c args = (loadConfig cfile $ configPath args)
                     >>= (\config -> (print config) >> (return (args, config)) ) >>= f
              where cfile = (proj args) ++ "_" ++ (target args)
 
-           f p = let serverOpts = configGet (snd p) serverInfoGet serverAddr_err_msg
+           f p = let serverOpts = configGet (snd p) serverInfoGet KConst.serverAddr_err_msg
                      -- Testing
                      testing h = (judge $ fromJust $ testCmdGet (snd p))
-                                 >>= (\isPass -> notify h (fst p) isPass)
+                                 >>= (\isPass -> (notify h (fst p) isPass) >> (throwError isPass))
                  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
   -- Get arguments and configurations
        in getKayleArgs >>= c
-
+  where throwError bool = if bool == False then error "Test failed" else return ()
 -- Accept if pass test otherwise throw an error
 notify :: Homer -> KayleArgs -> Bool -> IO ()
 notify h args False = notify' h args (fromList [(target args, "F")])
@@ -69,8 +71,8 @@ judge c = do
   let cmds = C.content c
 
   isSuccess <- run_command_1 (head $ cmds)
-  isSubSuccess <- case Prelude.null $ tail cmds of
-                    True -> judge TestContent_None
-                    False -> judge $ TestContent_cfg (tail cmds)
-
-  return $ isSuccess && isSubSuccess
+  if isSuccess == False
+    then return False
+    else case Prelude.null $ tail cmds of
+           True -> judge TestContent_None
+           False -> judge $ TestContent_cfg (tail cmds)

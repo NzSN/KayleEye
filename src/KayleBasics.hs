@@ -144,7 +144,7 @@ run_command cmd args = do
 -- Run shell command (args is within the string of shell command)
 run_command_1 :: String -> IO Bool
 run_command_1 cmd = do
-  isSuccess <- try (callCommand $ cmd ++ redirectToNull) :: IO (Either SomeException ())
+  isSuccess <- try (callCommand $ cmd) :: IO (Either SomeException ())
   case isSuccess of
     Left ex -> return False
     Right () -> return True
