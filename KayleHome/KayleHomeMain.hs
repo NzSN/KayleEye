@@ -46,7 +46,7 @@ main = do
 
   -- Configuration file loaded
   args <- getArgs
-  configs <- loadConfig (Prelude.head args) configPath
+  configs <- loadConfig (Prelude.head args) (last args)
   print configs
 
   -- Homer initialization

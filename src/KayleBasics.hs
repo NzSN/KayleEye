@@ -36,7 +36,7 @@ redirectToNull = " 1>/dev/null 2>/dev/null "
 loadConfig :: String -> String -> IO Configs
 loadConfig proj path = do
   -- Load configuration file from gitlab
-  isSuccess <- run_command_1 ("git clone " ++ configPath ++ " config")
+  isSuccess <- run_command_1 ("git clone " ++ path ++ " config")
   if isSuccess == True
     -- Parsing the configuration file specified by project
     then parsingConfig
