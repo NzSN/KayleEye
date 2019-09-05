@@ -134,4 +134,6 @@ letterInit cfgs l = do
   where tProj = configGet cfgs testPiecesGet test_proj_err_msg
         tContents = testContent tProj
         allKeys = keys $ H.content l
-        lookup' k m = if isNothing $ Map.lookup k m then "O" else "T"
+        lookup' k m = case Map.lookup k m of
+                        Nothing -> "O"
+                        Just v  -> v
