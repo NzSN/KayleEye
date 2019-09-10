@@ -24,6 +24,7 @@ import Network.Socket
 
 -- Map
 import Data.Map as Map
+import Data.Map.Merge.Strict
 
 -- List
 import Data.List as List
@@ -47,9 +48,7 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (last args)
-  print configs
 
-  -- Homer initialization
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
   homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
 
@@ -122,18 +121,24 @@ procRequests mng homer key_ cfgs =
 -- Generate a letter via exists letter and configuration
 letterInit :: Configs -> Letter -> Maybe Letter
 letterInit cfgs l = do
-  let ident_ = str2Ident (ident l)
-
-  if (ident_name ident_) == (testName tProj)
-    then return $ Letter (ident l) (header l)
-         (fromList [ if elem x allKeys
-                     then (x, lookup' x (H.content l))
-                     else (x, "O")
-                   | x <- tContents ])
-    else Nothing
-  where tProj = configGet cfgs testPiecesGet test_proj_err_msg
-        tContents = testContent tProj
-        allKeys = keys $ H.content l
-        lookup' k m = case Map.lookup k m of
-                        Nothing -> "O"
-                        Just v  -> v
+  let letter_ident = ident l
+      workContent_m = Map.lookup letter_ident tContents
+  if isNothing $ workContent_m
+    then Nothing
+    else let workContent = fromJust workContent_m
+         in return $ Letter (ident l) (header l) $ fromList
+            [ letterContentItem x (H.content l) |  x <- workContent ]
+  where
+    -- Contents of all testing projects
+    tProjs = configGet cfgs (testPiecesGet (ident l)) test_proj_err_msg
+    tContents = testContent tProjs
+    -- All keys of content of letter
+    allKeys = keys $ H.content l
+    -- Item generator for content of new letter
+    letterContentItem key content =
+        if elem key allKeys
+        then (key, lookup' key content)
+        else (key, "O")
+    lookup' k m = case Map.lookup k m of
+                    Nothing -> "O"
+                    Just v  -> v

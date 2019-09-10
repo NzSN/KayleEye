@@ -47,12 +47,12 @@ loadConfig proj path = do
          -- Parsing
          parsingConfig
   where
-    parsingConfig :: IO [[String]]
+    parsingConfig :: IO Configs
     parsingConfig = do
       file_ref <- openFile ("./config/" ++ proj ++ ".txt") ReadMode
       contents <-  hGetContents file_ref
 
-      let config = fromRight (("error":[]):[]) $ parseConfig contents
+      let config = fromRight Configs_Empty $ parseConfig contents
       return config
 
 -- Accept an merge request into main branch

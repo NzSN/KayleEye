@@ -12,10 +12,16 @@ import Data.Map.Merge.Strict
 import Data.Maybe
 import Data.List.Split
 
+import Debug.Trace (trace)
+
 data Configs = Configs_M { configMap :: Map String Configs }
               | Configs_L { configList :: [Configs] }
               | Configs_Str { configVal :: [Char] }
               | Configs_Empty deriving Show
+
+isEmpty :: Configs -> Bool
+isEmpty Configs_Empty = True
+isEmpty _ = False
 
 data Projects_cfg = ProjectsConfig_cfg { projName :: String } deriving Show
 data TestProject_cfg = TestProject_cfg { testContent :: Map String [String] } deriving Show
@@ -86,20 +92,44 @@ optDefs = do
   eol
   optDefPrefix
   x <- defStmt
-  xs <- try optDefs <|> return (Configs_L [Configs_Empty])
+  xs <- try optDefs <|> return Configs_Empty
 
   case x of
-    Configs_L l -> return $ Configs_L $ (configList x) ++ (configList xs)
-    Configs_M m -> return $ Configs_M $ merge1 m (configMap xs)
-  where merge1 m1 m2 = merge
-                       (mapMaybeMissing (\k v -> return v))
-                       (mapMaybeMissing (\k v -> return v))
-                       (zipWithMaybeMatched (\k v1 v2 -> return v1))
-                       m1 m2
+    Configs_L l -> return $ if not $ isEmpty xs
+                            then Configs_L $ (configList x) ++ (configList xs)
+                            else x
+    Configs_M m -> return $ if not $ isEmpty xs
+                            then Configs_M $ merge1 m (configMap xs)
+                            else x
+    Configs_Str str -> return $ if not $ isEmpty xs
+                                then Configs_L (x:(configList xs))
+                                else Configs_L (x:[])
+  where
+    -- Ignore empty
+    trans x x1 =
+      case x of
+        Configs_L l -> if isEmpty x1
+                       then Configs_L [Configs_Empty]
+                       else x1
+        Configs_M m -> if isEmpty x1
+                       then Configs_M Map.empty
+                       else x1
+        Configs_Str str -> if isEmpty x1
+                           then Configs_L [Configs_Empty]
+                           else x1
+    -- Map merge
+    merge1 m1 m2 = merge
+                   (mapMaybeMissing (\k v -> return v))
+                   (mapMaybeMissing (\k v -> return v))
+                   (zipWithMaybeMatched (\k v1 v2 -> return v1))
+                   m1 m2
 
 defStmt :: GenParser Char st Configs
 defStmt = do
-  ret <- defArray <|> defPair <|> defObj <|> defMap
+  ret <- try defArray
+         <|> try defPair
+         <|> try defMap
+         <|> defObj
   return ret
 
 defObj :: GenParser Char st Configs
@@ -117,9 +147,7 @@ defArray = do
 defMap :: GenParser Char st Configs
 defMap = do
   char '{'
-  skipMany (try mySpace)
-  key <- myString
-  skipMany (try mySpace)
+  key <- keyString
   char ':'
   body <- defArray_body
   char '}'
@@ -132,7 +160,9 @@ defArray_body = do
   str <- myString
 
   strN <- (skipMany (try mySpace) >> char ',' >> defArray_body) <|> return Configs_Empty
-  return $ Configs_L $ (Configs_Str str):(configList strN)
+  return $ Configs_L $ if isEmpty strN
+                       then (Configs_Str str):[]
+                       else (Configs_Str str):(configList strN)
 
 defPair :: GenParser Char st Configs
 defPair = do
@@ -151,6 +181,9 @@ eol = try (char '\n') <|>
 
 myString :: GenParser Char st String
 myString = many (noneOf "\n,(){}[]")
+
+keyString :: GenParser Char st String
+keyString = many (noneOf "\n,(){}[]:")
 
 mySpace :: GenParser Char st Char
 mySpace = do
@@ -217,7 +250,7 @@ testCmdGet :: Configs -> Maybe TestContent_cfg
 testCmdGet opts = configRetrive opts "TestCmd" (\(Configs_L cfg) -> TestContent_cfg $ [configVal x | x <- cfg])
 
 testPiecesGet :: String -> Configs -> Maybe TestProject_cfg
-testPiecesGet projName opts = configRetrive opts "TestProject" (getContent)
+testPiecesGet projName opts = configRetrive opts "TestProject" getContent
   where getContent (Configs_M m) =  TestProject_cfg $ fromList [ (x, cValsToStrs y)| (x, Configs_L y) <- toList m]
         cValsToStrs cVals = [ configVal cv | cv <- cVals]
 
