@@ -47,8 +47,8 @@ getKayleArgs = do
     ((!!) args 5) -- build cmds
 
 main :: IO ()
-main = let c args = (loadConfig cfile $ configPath args)
-                    >>= (\config -> (print config) >> (return (args, config))) >>= f
+main = let c args = (loadConfig cfile $ configPath args) 
+		>>= (\config -> (return (args, config))) >>= f
              where cfile = (proj args) ++ "_" ++ (target args)
 
            f p = let serverOpts = configGet (snd p) serverInfoGet KConst.serverAddr_err_msg
