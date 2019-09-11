@@ -12,10 +12,14 @@ import Data.Map.Merge.Strict
 import Data.Maybe
 import Data.List.Split
 
+import Test.HUnit
+import Data.Either
 import Debug.Trace (trace)
+import System.IO
 
 data Configs = Configs_M { configMap :: Map String Configs }
               | Configs_L { configList :: [Configs] }
+              | Configs_P { configPair :: (Configs, Configs) }
               | Configs_Str { configVal :: [Char] }
               | Configs_Empty deriving Show
 
@@ -29,7 +33,7 @@ data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: Str
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
 data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
 data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
-data TestContent_cfg = TestContent_cfg { content :: [String] } | TestContent_None deriving Show
+data TestContent_cfg = TestContent_cfg { content :: [(String, String)] } | TestContent_None deriving Show
 data DatabaseInfo_cfg = DatabaseInfo_cfg
   { db_host :: String, db_user :: String, db_pass :: String, db :: String } deriving Show
 data ServerInfo_cfg = ServerInfo_cfg { addr :: String, port :: String } deriving Show
@@ -104,19 +108,10 @@ optDefs = do
     Configs_Str str -> return $ if not $ isEmpty xs
                                 then Configs_L (x:(configList xs))
                                 else Configs_L (x:[])
+    Configs_P p -> return $ if not $ isEmpty xs
+                            then Configs_L $ x:(configList xs)
+                            else Configs_L $ x:[]
   where
-    -- Ignore empty
-    trans x x1 =
-      case x of
-        Configs_L l -> if isEmpty x1
-                       then Configs_L [Configs_Empty]
-                       else x1
-        Configs_M m -> if isEmpty x1
-                       then Configs_M Map.empty
-                       else x1
-        Configs_Str str -> if isEmpty x1
-                           then Configs_L [Configs_Empty]
-                           else x1
     -- Map merge
     merge1 m1 m2 = merge
                    (mapMaybeMissing (\k v -> return v))
@@ -173,7 +168,7 @@ defPair = do
   spaces
   right <- myString
   char ')'
-  return $ Configs_L [Configs_Str left, Configs_Str right]
+  return $ Configs_P (Configs_Str left, Configs_Str right)
 
 eol :: GenParser Char st Char
 eol = try (char '\n') <|>
@@ -247,8 +242,9 @@ adminEmailGet :: Configs -> Maybe AdminEmailAddr_cfg
 adminEmailGet opts = configRetrive opts "AdminEmail" (\(Configs_L cfg) -> AdminEmailAddr_cfg $ configVal $ head cfg)
 
 testCmdGet :: Configs -> Maybe TestContent_cfg
-testCmdGet opts = configRetrive opts "TestCmd" (\(Configs_L cfg) -> TestContent_cfg $ [configVal x | x <- cfg])
-
+testCmdGet opts = configRetrive opts "TestCmd"
+                  (\(Configs_L cfg) -> TestContent_cfg $ [ toStringPair $ configPair x | x <- cfg])
+  where toStringPair p = (configVal $ fst p, configVal $ snd p)
 testPiecesGet :: String -> Configs -> Maybe TestProject_cfg
 testPiecesGet projName opts = configRetrive opts "TestProject" getContent
   where getContent (Configs_M m) =  TestProject_cfg $ fromList [ (x, cValsToStrs y)| (x, Configs_L y) <- toList m]
@@ -264,3 +260,55 @@ databaseGet opts = configRetrive opts "Database"
 serverInfoGet :: Configs -> Maybe ServerInfo_cfg
 serverInfoGet opts = configRetrive opts "ServerAddr"
   (\(Configs_L cfg) -> ServerInfo_cfg (configVal $ head cfg) (configVal $ last cfg))
+
+-- Test cases
+parserTest :: Test
+parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
+  where
+    parserAssert :: Assertion
+    parserAssert = do
+      file <- openFile ("./config.txt") ReadMode
+      contents <- hGetContents file
+
+      let config = fromRight Configs_Empty $ parseConfig contents
+      print config
+
+      -- Admin Email
+      let aEmail = fromJust $ adminEmailGet config
+      assertEqual "AdminEmail" "gpon_olt@szgcom.com" $ adminEmailAddr aEmail
+
+      -- TestProject
+      let tProj = fromJust $ testPiecesGet "GL8900" config
+      assertEqual "TestProject"
+        (fromList [("GL8900", ["1", "2", "3", "4", "5"])]) (testContent tProj)
+
+      -- Email
+      let email = fromJust $ emailInfoGet config
+      assertEqual "Email" (host email) "smtp.exmail.qq.com"
+      assertEqual "Email" (user email) "gpon_olt@szgcom.com"
+      assertEqual "Email" (pass email) "Gcom123"
+
+      -- Accept Api
+      let acceptApi = fromJust $ mrAcceptApiConfig config
+      assertEqual "AcceptApi" (a_api acceptApi)
+        "http://gpon.git.com:8011/api/v4/projects/56/merge_requests/*/merge?private_token=D_-yvMKXNJcqpQxZr_CU"
+
+      -- Rebase Api
+      let rebaseApi = fromJust $ mrRebaseApiConfig config
+      assertEqual "RebaseApi" (r_api rebaseApi) "http://gpon.git.com:8011/api/v4/projects/56/merge_requests/*/rebase?private_token=D_-yvMKXNJcqpQxZr_CU"
+
+      -- Server Info
+      let serverInfo = fromJust $ serverInfoGet config
+      assertEqual "ServerInfo" (addr serverInfo) "0.0.0.0"
+      assertEqual "ServerInfo" (port serverInfo) "8011"
+
+      -- Database
+      let dbInfo = fromJust $ databaseGet config
+      assertEqual "Database" (db_host dbInfo) "127.0.0.1"
+      assertEqual "Database" (db_user dbInfo) "kayle"
+      assertEqual "Database" (db_pass dbInfo) "kayleKey"
+      assertEqual "Database" (db      dbInfo) "kayledb"
+
+      let cmd = fromJust $ testCmdGet config
+      print cmd
+      -- assertEqual "TestCmd" ["@RebuildAll", ".\\GBN\\src\\clear_gpon.bat"] (content cmd)

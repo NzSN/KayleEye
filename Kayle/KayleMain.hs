@@ -11,6 +11,8 @@ import Debug.Trace
 import System.Environment
 import Data.Map
 import Data.Maybe
+import Data.List
+import Data.List.Split
 
 -- Configuration
 import Modules.ConfigReader as C
@@ -30,25 +32,29 @@ data KayleArgs = KayleArgs {
   target :: String,
   sha :: String,
   iid :: String,
-  configPath :: String } deriving Show
+  configPath :: String,
+  cmds :: String } deriving Show
 
 getKayleArgs :: IO KayleArgs
 getKayleArgs = do
   args <- getArgs
-  return $ KayleArgs (head args)
-    (head . tail $ args)
-    (head . tail . tail . tail $ args)
-    (head . tail . tail $ args)
-    (last $ args)
+  return $ KayleArgs
+    ((!!) args 0) -- proj
+    ((!!) args 1) -- target
+    ((!!) args 2) -- sha
+    ((!!) args 3) -- iid
+    ((!!) args 4) -- configPath
+    ((!!) args 5) -- build cmds
 
 main :: IO ()
 main = let c args = (loadConfig cfile $ configPath args)
-                    >>= (\config -> (print config) >> (return (args, config)) ) >>= f
+                    >>= (\config -> (print config) >> (return (args, config))) >>= f
              where cfile = (proj args) ++ "_" ++ (target args)
 
            f p = let serverOpts = configGet (snd p) serverInfoGet KConst.serverAddr_err_msg
+                     testCmds = configGet (snd p) testCmdGet KConst.test_cmd_err_msg
                      -- Testing
-                     testing h = (judge $ fromJust $ testCmdGet (snd p))
+                     testing h = (judge testCmds (cmds (fst p)) )
                                  >>= (\isPass -> (notify h (fst p) isPass) >> (throwError isPass))
                  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
   -- Get arguments and configurations
@@ -65,14 +71,25 @@ notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
                            l = Letter i h c
                        in homerFlyWith homer l >> return ()
 
-judge :: TestContent_cfg -> IO Bool
-judge TestContent_None = return True
-judge c = do
+judge :: TestContent_cfg
+      -> String -- Build commands
+      -> IO Bool
+judge TestContent_None bCmds = return True
+judge c bCmds = do
   let cmds = C.content c
-
-  isSuccess <- run_command_1 (head $ cmds)
-  if isSuccess == False
-    then return False
-    else case Prelude.null $ tail cmds of
-           True -> judge TestContent_None
-           False -> judge $ TestContent_cfg (tail cmds)
+      controls = splitOn " " bCmds
+  -- "@" Which is default control command for a test command
+  -- it means the test command can be run.
+  loop cmds $ ("@":controls)
+  where
+    loop (cmd:cmds) controls = do
+      let control_str = fst cmd
+          cmd_str = snd cmd
+      if elem control_str controls
+        then (run_command_1 cmd_str) >>= (\x -> doNextOr x cmds controls)
+        else doNextOr True cmds controls
+    loop [] controls = return True
+    doNextOr b c ctrl =
+      if b == False
+      then return False
+      else loop c ctrl

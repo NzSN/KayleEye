@@ -62,7 +62,8 @@ accept :: Manager -> Configs
 accept mng cfgs iid = do
   args <- getArgs
 
-  let acceptUrl = replace_iid (Prelude.head $ configSearch cfgs "AcceptUrl") iid
+  let acceptUrl = replace_iid
+                  (a_api $ configGet cfgs mrAcceptApiConfig accept_err_msg) iid
   code <- put_req acceptUrl mng
 
   case code of
@@ -89,7 +90,8 @@ rebase :: Manager -> Configs
        -> IO ()
 rebase mng cfgs iid = do
   args <- getArgs
-  let rebaseUrl = replace_iid (Prelude.head $ configSearch cfgs "RebaseUrl") iid
+  let rebaseUrl = replace_iid
+                  (r_api $ configGet cfgs mrRebaseApiConfig rebase_err_msg) iid
   code <- put_req rebaseUrl mng
 
   case code of
@@ -156,19 +158,6 @@ replace_iid (x:xs) iid = x : replace_iid xs iid
 replace_iid "" iid = ""
 
 -- Search option from Configs
-configSearch :: Configs -> String -> [String]
-configSearch configs theConfig = case theConfig of
-  "Command" -> case testCmdGet configs of
-                 Nothing -> error errorMsg
-                 Just cmd -> Config.content cmd
-  "AcceptUrl" -> case mrAcceptApiConfig configs of
-                   Nothing -> error errorMsg
-                   Just url -> Config.a_api url : []
-  "RebaseUrl" -> case mrRebaseApiConfig configs of
-                   Nothing -> error errorMsg
-                   Just url -> Config.r_api url : []
-  where errorMsg = "No " ++ theConfig ++ " found"
-
 configGet :: Configs -> (Configs -> Maybe a) -> String -> a
 configGet cfgs f errMsg = case f cfgs of
                      Nothing  -> error errMsg
