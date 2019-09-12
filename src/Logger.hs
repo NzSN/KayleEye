@@ -8,13 +8,19 @@ import System.IO
 import Control.Monad.Trans.Reader
 import Control.Monad.Writer
 
-type LoggerConfigs = [String]
-type LoggerContent = String
+type Logger = WriterT [String] IO
 
-type Logger = WriterT LoggerContent (ReaderT LoggerConfigs IO)
+runLogger :: Logger a -> String -> IO ()
+runLogger l path = do
+  (_, logMsgs) <- runWriterT l
+  if null logMsgs
+    then return ()
+    else do file <- openFile path WriteMode
+            mapM_ (hPutStrLn file) logMsgs
+            hClose file
 
-putToLogger :: Logger a -> LoggerContent -> Logger a
-putToLogger l c = tell c >> l
+appendLogger :: String -> Logger ()
+appendLogger c = tell [c]
 
 -- Test Cases
 loggerTest :: Test
@@ -22,8 +28,8 @@ loggerTest = TestList [TestLabel "Logger put" (TestCase loggerAssert)]
   where loggerAssert :: Assertion
         loggerAssert = do
           let l = do
-                tell "hello"
+                tell ["hello"]
                 (return 6 :: Logger Int)
-          c <- (runReaderT . runWriterT $ l) ["123"]
+          c <- runWriterT l
 
-          assertEqual "LoggerPut"  True (6 == (fst c) && "hello" == (snd c))
+          assertEqual "LoggerPut"  True (6 == (fst c) && "hello" == (head $ snd c))

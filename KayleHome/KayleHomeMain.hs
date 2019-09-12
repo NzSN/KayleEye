@@ -29,6 +29,9 @@ import Data.Map.Merge.Strict
 -- List
 import Data.List as List
 
+import Control.Monad.Trans.Reader
+import Control.Monad.Writer
+
 -- Maybe
 import Data.Maybe
 
@@ -39,7 +42,23 @@ import Data.Aeson
 import Homer as H
 import LetterBox
 import KayleConst
+import Logger
 import KayleBasics as K
+
+type Args = [String]
+data KayleEnv = KayleEnv { envCfg :: Configs,
+                           envMng :: Manager,
+                           envArgs :: Args,
+                           envHomer :: Homer,
+                           envKey :: BoxKey }
+
+type Kayle = ReaderT KayleEnv Logger ()
+
+runKayle :: Kayle -> KayleEnv -> IO ()
+runKayle k e =
+  (runLogger (runReaderT k e) (last $ envArgs e))
+  -- loop to deal with next requests
+  >> runKayle k e
 
 main = do
   -- Spawn http client manager
@@ -59,64 +78,66 @@ main = do
   -- Database init, Create procTbl and historyTbl if not exists
   boxInit bKey
 
-  procRequests manager homer bKey configs
+  let env = (KayleEnv configs manager args homer bKey)
+  runKayle doKayle env
 
-procRequests :: Manager -> Homer -> BoxKey -> Configs -> IO ()
-procRequests mng homer key_ cfgs =
-  let proc letter =
-        -- Is letter already in history table, which means its already done previous
-        (isLetterExists key_ historyTbl (ident letter)) >>= nextRequests''
-        -- Is already in processing
-        >> (isLetterExists key_ procTbl (ident letter))
-        -- Processing the letter
-        >>= (\isExists_proc -> if isExists_proc then (proc_in letter) else (proc_new letter))
+doKayle :: Kayle
+doKayle = do
+  env <- ask
 
-      -- Function to Processing letters that in procTable
-      proc_in letter =
-        -- Search Letter from letterBox via the identity of received letter
-        (runMaybeT $ searchLetter key_ procTbl (ident letter))
-        -- If there is no such a letter in letterBox then just ignore the letter
-        >>= (\x -> nextRequests' x >> (return $ fromJust x))
-        -- Update the letter we just get from letterBox
-        >>= (\x -> let content = H.content letter
-                   in return $ letterUpdate' x
-                      -- lookup function must return non nothng value here
-                      [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent letter ])
-        -- To check that is the test recorded by the letter has been done
-        -- Store the letter into proc table or history depend of the state of letter
-        >>= (\x -> (updateLetter key_ (H.ident x) (encode $ H.content x) $ isTestFinished x))
-        >>= (\x -> if x == 1 && isTestSuccess letter
-                      -- retriFromHeader must not return Nothing here
-                      -- accept the merge request is such case
-                   then K.accept mng cfgs (fromJust $ retriFromHeader letter "iid")
-                        -- Notification when test failed is not need
-                        -- case buildbot will do that.
-                   else return ())
-        -- After all pending for next request
-        >> nextRequests
+  let homer = envHomer env
+      bKey = envKey env
 
-      -- Function to processing letters that first arrived
-      proc_new letter =
-        -- Generate an letter base on configuration and the received letter
-        (return $ letterInit cfgs letter)
-        -- If generation failed, which means the letter's project name can not match
-        -- any test within configuration file, just ignore the letter and jump to next request
-        >>= (\x -> nextRequests' x >> return x)
-        -- Store the letter generated just now into letterBox
-        >>= (\x -> insertLetter key_ procTbl (fromJust x))
-        -- After all pending for next request
-        >> nextRequests
+  logKayle $ "Ready to process requests"
+  letter <- liftIO . waitHomer $ homer
 
-  in print "Ready to process requests" >> (waitHomer homer)
-     >>= (\x -> (print x) >> (proc x))
+  exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
+  if not exists
+    then do procExists <- liftIO . isLetterExists bKey procTbl $ (ident letter)
+            if procExists
+              then newLetter letter env
+              else inProcLetter letter env
+    else return ()
+        -- Append log message to Kayle
+  where logKayle = lift . appendLogger
+        -- Function to process new incomming letter
+        newLetter :: Letter -> KayleEnv -> Kayle
+        newLetter l env =
+          let cfgs = envCfg env
+              bKey = envKey env
+          in (return $ letterInit cfgs l)
+             >>= (\x -> if isNothing x
+                        then logKayle "letterInit failed"
+                        else (logKayle $ "Insert letter Ident:"
+                                         ++ (H.ident l) ++ " Content: " ++ (show $ H.content l)
+                                         ++ "Into " ++ procTbl)
+                             >> (liftIO . insertLetter bKey procTbl) (fromJust x))
+        -- Function to process inProc letter
+        inProcLetter :: Letter -> KayleEnv -> Kayle
+        inProcLetter l env =
+          let cfgs = envCfg env
+              bKey = envKey env
+          in (liftIO . runMaybeT $ searchLetter bKey procTbl (ident l))
+             >>= (\x -> if isNothing x
+                        then logKayle "inProc: letter doesn't exists"
+                        else inProcDo l (fromJust x) env)
+        -- Function to update received letter into box
+        inProcDo :: Letter -- The recevied letter
+                 -> Letter -- The letter from box
+                 -> KayleEnv -> Kayle
+        inProcDo rl bl env =
+          let content = H.content rl
+             -- Update the letter from box
+          in (return $ letterUpdate' bl
+               [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
+             -- Put the letter from box back to box
+             >>= (\x -> liftIO . updateLetter (envKey env) (H.ident x)
+                        (encode $ H.content x) $ isTestFinished x)
+             -- To check that whether the test describe by the letter is done
+             >>= (\x -> if x == 1 && isTestSuccess rl
+                        then liftIO . K.accept (envMng env)  (envCfg env) $ (fromJust $ retriFromHeader rl "iid")
+                        else return ())
 
-  where
-    -- Immediately to wait to next requests
-    nextRequests = procRequests mng homer key_ cfgs
-    -- Immediately to wait to next requests, accept Maybe type
-    nextRequests' x = if isNothing x then nextRequests else return ()
-    -- Immediately to wait to next requests, accept Bool
-    nextRequests'' x = if x then nextRequests else return ()
 
 -- Generate a letter via exists letter and configuration
 letterInit :: Configs -> Letter -> Maybe Letter
