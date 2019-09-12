@@ -88,7 +88,7 @@ doKayle = do
   let homer = envHomer env
       bKey = envKey env
 
-  logKayle $ "Ready to process requests"
+  logKayle "Info" "Ready to process requests"
   letter <- liftIO . waitHomer $ homer
 
   exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)

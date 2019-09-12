@@ -27,6 +27,8 @@ appendLogger :: String -- Header
              -> Logger ()
 appendLogger h c = tell [h ++ seperator ++ c]
 
+
+
 -- Test Cases
 loggerTest :: Test
 loggerTest = TestList [TestLabel "Logger put" (TestCase loggerAssert)]
