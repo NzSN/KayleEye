@@ -99,7 +99,7 @@ doKayle = do
               else inProcLetter letter env
     else return ()
         -- Append log message to Kayle
-  where logKayle = lift . appendLogger
+  where logKayle h = lift . appendLogger h
         -- Function to process new incomming letter
         newLetter :: Letter -> KayleEnv -> Kayle
         newLetter l env =
@@ -107,10 +107,10 @@ doKayle = do
               bKey = envKey env
           in (return $ letterInit cfgs l)
              >>= (\x -> if isNothing x
-                        then logKayle "letterInit failed"
-                        else (logKayle $ "Insert letter Ident:"
-                                         ++ (H.ident l) ++ " Content: " ++ (show $ H.content l)
-                                         ++ "Into " ++ procTbl)
+                        then logKayle "Error" "letterInit failed"
+                        else (logKayle "Info" $ "Insert letter Ident:"
+                               ++ (H.ident l) ++ " Content: " ++ (show $ H.content l)
+                               ++ "Into " ++ procTbl)
                              >> (liftIO . insertLetter bKey procTbl) (fromJust x))
         -- Function to process inProc letter
         inProcLetter :: Letter -> KayleEnv -> Kayle
@@ -119,7 +119,7 @@ doKayle = do
               bKey = envKey env
           in (liftIO . runMaybeT $ searchLetter bKey procTbl (ident l))
              >>= (\x -> if isNothing x
-                        then logKayle "inProc: letter doesn't exists"
+                        then logKayle "Warning" "Letter doesn't exists"
                         else inProcDo l (fromJust x) env)
         -- Function to update received letter into box
         inProcDo :: Letter -- The recevied letter
@@ -135,7 +135,10 @@ doKayle = do
                         (encode $ H.content x) $ isTestFinished x)
              -- To check that whether the test describe by the letter is done
              >>= (\x -> if x == 1 && isTestSuccess rl
-                        then liftIO . K.accept (envMng env)  (envCfg env) $ (fromJust $ retriFromHeader rl "iid")
+                        then liftIO . K.accept
+                             (envMng env)
+                             (envCfg env)
+                             $ (fromJust $ retriFromHeader rl "iid")
                         else return ())
 
 

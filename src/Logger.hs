@@ -10,17 +10,22 @@ import Control.Monad.Writer
 
 type Logger = WriterT [String] IO
 
+seperator :: String
+seperator = " : "
+
 runLogger :: Logger a -> String -> IO ()
 runLogger l path = do
   (_, logMsgs) <- runWriterT l
   if null logMsgs
     then return ()
-    else do file <- openFile path WriteMode
+    else do file <- openFile path AppendMode
             mapM_ (hPutStrLn file) logMsgs
             hClose file
 
-appendLogger :: String -> Logger ()
-appendLogger c = tell [c]
+appendLogger :: String -- Header
+             -> String -- Content
+             -> Logger ()
+appendLogger h c = tell [h ++ seperator ++ c]
 
 -- Test Cases
 loggerTest :: Test
