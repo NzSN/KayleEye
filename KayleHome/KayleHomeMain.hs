@@ -52,11 +52,11 @@ data KayleEnv = KayleEnv { envCfg :: Configs,
                            envHomer :: Homer,
                            envKey :: BoxKey }
 
-type Kayle = ReaderT KayleEnv Logger ()
+type Kayle = ReaderT KayleEnv (LoggerT IO) ()
 
 runKayle :: Kayle -> KayleEnv -> IO ()
 runKayle k e =
-  (runLogger (runReaderT k e) (last $ envArgs e))
+  (doLogger (runReaderT k e) (last $ envArgs e))
   -- loop to deal with next requests
   >> runKayle k e
 
