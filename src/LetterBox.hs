@@ -134,8 +134,8 @@ updateLetter key_ ident_ content status = do
   where
     -- Decoded letter content
     decodedContent = decode content :: Maybe (Map String String)
-    -- Move content from procTbl to historyTbl
     moveToHistory _ Nothing = return 3
+    -- Move content from procTbl to historyTbl
     moveToHistory letter_ (Just x) =
       (insertLetter key_ historyTbl (Letter (ident letter_) (header letter_) x))
       >> removeLetter key_ procTbl (ident letter_)

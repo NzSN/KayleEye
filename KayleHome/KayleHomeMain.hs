@@ -69,6 +69,7 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
+  print configs
 
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
   homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
@@ -95,26 +96,28 @@ doKayle = do
 
   logKayle "Info" "Ready to process requests"
   letter <- liftIO . waitHomer $ homer
-
+  liftIO . print $ letter
   exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
   if not exists
     then do procExists <- liftIO . isLetterExists bKey procTbl $ (ident letter)
-            if procExists
+            if not procExists
               then newLetter letter env
               else inProcLetter letter env
     else return ()
         -- Function to process new incomming letter
+        -- fixme : Test may finished in this situation but
+        --         it's not deal by this code.
   where newLetter :: Letter -> KayleEnv -> Kayle
         newLetter l env =
           let cfgs = envCfg env
               bKey = envKey env
           in (return $ letterInit cfgs l)
-             >>= (\x -> if isNothing x
+             >>= \x -> if isNothing x
                         then logKayle "Error" "letterInit failed"
                         else (logKayle "Info" $ "Insert letter Ident:"
                                ++ (H.ident l) ++ " Content: " ++ (show $ H.content l)
-                               ++ "Into " ++ procTbl)
-                             >> (liftIO . insertLetter bKey procTbl) (fromJust x))
+                               ++ " Into " ++ procTbl)
+                             >> (liftIO . insertLetter bKey procTbl) (fromJust x)
         -- Function to process inProc letter
         inProcLetter :: Letter -> KayleEnv -> Kayle
         inProcLetter l env =
@@ -148,8 +151,8 @@ doKayle = do
 -- Generate a letter via exists letter and configuration
 letterInit :: Configs -> Letter -> Maybe Letter
 letterInit cfgs l = do
-  let letter_ident = ident l
-      workContent_m = Map.lookup letter_ident tContents
+  let letter_ident = ident_name . str2Ident . ident $ l
+      workContent_m = Map.lookup (trace letter_ident letter_ident) tContents
   if isNothing $ workContent_m
     then Nothing
     else let workContent = fromJust workContent_m
