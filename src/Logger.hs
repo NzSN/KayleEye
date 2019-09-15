@@ -51,10 +51,13 @@ instance (Functor m, Applicative m, Monad m) => Monad (LoggerT m) where
   -- Bind
   mx >>= f =  LoggerT $ do
     x <- runLoggerT mx
+
     let p = runWriter x
         my = f (fst p)
+
     x1 <- runLoggerT my
-    return $ writer (fst $ runWriter x1, snd p)
+
+    return $ writer (fst $ runWriter x1, (snd p) `mappend` (snd $ runWriter x1))
 
   x >> y = LoggerT $ do
     x_w <- runLoggerT x

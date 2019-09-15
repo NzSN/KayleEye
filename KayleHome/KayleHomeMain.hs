@@ -17,6 +17,7 @@ import System.Environment
 import Modules.ConfigReader as C
 
 -- Monad Transformers
+import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Maybe
 
 -- Socket
@@ -29,7 +30,6 @@ import Data.Map.Merge.Strict
 -- List
 import Data.List as List
 
-import Control.Monad.Trans.Reader
 import Control.Monad.Writer
 
 -- Maybe
@@ -44,6 +44,8 @@ import LetterBox
 import KayleConst
 import Logger
 import KayleBasics as K
+
+import Control.Concurrent
 
 type Args = [String]
 data KayleEnv = KayleEnv { envCfg :: Configs,
@@ -66,7 +68,7 @@ main = do
 
   -- Configuration file loaded
   args <- getArgs
-  configs <- loadConfig (Prelude.head args) (last args)
+  configs <- loadConfig (Prelude.head args) (head . tail $ args)
 
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
   homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
@@ -80,6 +82,9 @@ main = do
 
   let env = (KayleEnv configs manager args homer bKey)
   runKayle doKayle env
+
+-- Append log message to Kayle
+logKayle h = lift . appendLogger h
 
 doKayle :: Kayle
 doKayle = do
@@ -98,10 +103,8 @@ doKayle = do
               then newLetter letter env
               else inProcLetter letter env
     else return ()
-        -- Append log message to Kayle
-  where logKayle h = lift . appendLogger h
         -- Function to process new incomming letter
-        newLetter :: Letter -> KayleEnv -> Kayle
+  where newLetter :: Letter -> KayleEnv -> Kayle
         newLetter l env =
           let cfgs = envCfg env
               bKey = envKey env
