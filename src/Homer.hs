@@ -68,6 +68,9 @@ instance FromJSON Letter where
     <*> v .: "header"
     <*> v .: "content"
 
+sizeOfLetter :: Letter -> Int
+sizeOfLetter l = size . content $ l
+
 emptyLetter :: Letter
 emptyLetter = Letter "" Map.empty Map.empty
 

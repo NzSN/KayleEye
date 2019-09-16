@@ -80,6 +80,7 @@ doLogger :: Logger a -> String -> IO ()
 doLogger l path = do
   w <- runLoggerT $ l
   let (_, logMsgs) = runWriter w
+  print logMsgs
   if isBufferEmpty logMsgs
     then return ()
     else do file <- openFile path AppendMode

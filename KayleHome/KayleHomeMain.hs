@@ -69,7 +69,6 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
-  print configs
 
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
   homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
@@ -93,8 +92,9 @@ doKayle = do
 
   let homer = envHomer env
       bKey = envKey env
-
+  liftIO . print $ "$"
   logKayle "Info" "Ready to process requests"
+
   letter <- liftIO . waitHomer $ homer
   liftIO . print $ letter
   exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
@@ -105,8 +105,6 @@ doKayle = do
               else inProcLetter letter env
     else return ()
         -- Function to process new incomming letter
-        -- fixme : Test may finished in this situation but
-        --         it's not deal by this code.
   where newLetter :: Letter -> KayleEnv -> Kayle
         newLetter l env =
           let cfgs = envCfg env
@@ -114,10 +112,27 @@ doKayle = do
           in (return $ letterInit cfgs l)
              >>= \x -> if isNothing x
                         then logKayle "Error" "letterInit failed"
-                        else (logKayle "Info" $ "Insert letter Ident:"
-                               ++ (H.ident l) ++ " Content: " ++ (show $ H.content l)
-                               ++ " Into " ++ procTbl)
-                             >> (liftIO . insertLetter bKey procTbl) (fromJust x)
+                        else newLetterProc l (fromJust x) env bKey
+
+        -- Function to deal with situation there is only one test content in config
+        newLetterProc :: Letter -- Letter generate by letterInit
+                      -> Letter -- Letter is received from KayleEye
+                      -> KayleEnv
+                      -> BoxKey
+                      -> Kayle
+        newLetterProc rl l e b = if sizeOfLetter l == 1
+                            then newLetterInsert l historyTbl b >>
+                                   if isTestSuccess l
+                                   then liftIO . K.accept (envMng e) (envCfg e)
+                                        $ (fromJust $ retriFromHeader rl "iid")
+                                   else return ()
+                            else newLetterInsert l procTbl b
+        -- Function to insert new letter into table
+        newLetterInsert :: Letter -> String -> BoxKey -> Kayle
+        newLetterInsert l tbl k =
+          (logKayle "Info" $ "Insert letter { ident : " ++ (H.ident l) ++ ", Content : "
+            ++ (show $ H.content l) ++ " } Into " ++ tbl)
+          >> (liftIO . insertLetter k tbl) l
         -- Function to process inProc letter
         inProcLetter :: Letter -> KayleEnv -> Kayle
         inProcLetter l env =
