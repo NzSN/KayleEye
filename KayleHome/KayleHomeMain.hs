@@ -47,6 +47,8 @@ import KayleBasics as K
 
 import Control.Concurrent
 
+import System.Systemd.Daemon
+
 type Args = [String]
 data KayleEnv = KayleEnv { envCfg :: Configs,
                            envMng :: Manager,
@@ -92,11 +94,12 @@ doKayle = do
 
   let homer = envHomer env
       bKey = envKey env
-  liftIO . print $ "$"
+
   logKayle "Info" "Ready to process requests"
 
   letter <- liftIO . waitHomer $ homer
-  liftIO . print $ letter
+  logKayle "Info" $ "Received Letter : " ++ (show letter)
+
   exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
   if not exists
     then do procExists <- liftIO . isLetterExists bKey procTbl $ (ident letter)
@@ -130,8 +133,7 @@ doKayle = do
         -- Function to insert new letter into table
         newLetterInsert :: Letter -> String -> BoxKey -> Kayle
         newLetterInsert l tbl k =
-          (logKayle "Info" $ "Insert letter { ident : " ++ (H.ident l) ++ ", Content : "
-            ++ (show $ H.content l) ++ " } Into " ++ tbl)
+          (logKayle "Info" $ "Insert letter : " ++ (show l) ++ " Into " ++ tbl)
           >> (liftIO . insertLetter k tbl) l
         -- Function to process inProc letter
         inProcLetter :: Letter -> KayleEnv -> Kayle
@@ -152,14 +154,14 @@ doKayle = do
           in (return $ letterUpdate' bl
                [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
              -- Put the letter from box back to box
-             >>= (\x -> liftIO . updateLetter (envKey env) (H.ident x)
-                        (encode $ H.content x) $ isTestFinished x)
+             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
+                        (liftIO . updateLetter (envKey env) (H.ident x)
+                         (encode $ H.content x) $ isTestFinished x))
              -- To check that whether the test describe by the letter is done
              >>= (\x -> if x == 1 && isTestSuccess rl
-                        then liftIO . K.accept
-                             (envMng env)
-                             (envCfg env)
-                             $ (fromJust $ retriFromHeader rl "iid")
+                        then logKayle "Info" "Accpet Letter"
+                             >> (liftIO . K.accept (envMng env) (envCfg env)
+                                 $ (fromJust $ retriFromHeader rl "iid"))
                         else return ())
 
 
