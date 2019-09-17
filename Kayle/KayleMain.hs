@@ -60,8 +60,6 @@ main = let beginToJudge args =
 
   where cfileName p t = p ++ "_" ++ t
 
-throwError bool = if bool == False then error "Test failed" else return ()
-
 doJudge' :: KayleArgs -> Configs -> IO ()
 doJudge' args configs =
   let serverOpts = cGetServer configs
@@ -71,10 +69,14 @@ doJudge' args configs =
                   >>= dealWithMrOrPush h (isMr args)
   in pickHomer (addr serverOpts) (port serverOpts) >>= testing
 
-  where dealWithMrOrPush h s =
-          if isMr' $ s
-          then (notify h args) >> throwError
-          else throwError
+  where
+    -- Take actions correspond to the type of request
+    dealWithMrOrPush h s =
+      if isMr' $ s
+      then (notify h args) >> throwError
+      else throwError
+    -- Throw if judge failed
+    throwError bool = if bool == False then error "Test failed" else return ()
 
 -- Accept if pass test otherwise throw an error
 notify :: Homer -> KayleArgs -> Bool -> IO ()
