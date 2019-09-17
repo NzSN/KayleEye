@@ -52,11 +52,11 @@ isMr' :: String -> Bool
 isMr' s = s == "Y"
 
 main :: IO ()
-main = let doJudge args =
+main = let beginToJudge args =
              (loadConfig (cfileName (proj args) (target args)) $ configPath args)
              >>= \configs -> doJudge' args configs
           -- Get arguments and configurations
-       in getKayleArgs >>= doJudge
+       in getKayleArgs >>= beginToJudge
 
   where cfileName p t = p ++ "_" ++ t
 
