@@ -33,7 +33,8 @@ data KayleArgs = KayleArgs {
   sha :: String,
   iid :: String,
   configPath :: String,
-  cmds :: String } deriving Show
+  cmds :: String,
+  isMr :: String } deriving Show
 
 getKayleArgs :: IO KayleArgs
 getKayleArgs = do
@@ -45,21 +46,36 @@ getKayleArgs = do
     ((!!) args 3) -- iid
     ((!!) args 4) -- configPath
     ((!!) args 5) -- build cmds
+    ((!!) args 6) -- isMr
+
+isMr' :: String -> Bool
+isMr' s = s == "Y"
 
 main :: IO ()
-main = let c args = (loadConfig cfile $ configPath args)
-                    >>= (\config -> (print config) >> (return (args, config))) >>= f
-             where cfile = (proj args) ++ "_" ++ (target args)
+main = let doJudge args =
+             (loadConfig (cfileName (proj args) (target args)) $ configPath args)
+             >>= \configs -> doJudge' args configs
+          -- Get arguments and configurations
+       in getKayleArgs >>= doJudge
 
-           f p = let serverOpts = configGet (snd p) serverInfoGet KConst.serverAddr_err_msg
-                     testCmds = configGet (snd p) testCmdGet KConst.test_cmd_err_msg
-                     -- Testing
-                     testing h = (judge testCmds (cmds (fst p)) )
-                                 >>= (\isPass -> (notify h (fst p) isPass) >> (throwError isPass))
-                 in pickHomer (addr serverOpts) (port serverOpts) >>= testing
-  -- Get arguments and configurations
-       in getKayleArgs >>= c
-  where throwError bool = if bool == False then error "Test failed" else return ()
+  where cfileName p t = p ++ "_" ++ t
+
+throwError bool = if bool == False then error "Test failed" else return ()
+
+doJudge' :: KayleArgs -> Configs -> IO ()
+doJudge' args configs =
+  let serverOpts = cGetServer configs
+      testCmds = cGetCmds configs
+      -- Testing
+      testing h = judge testCmds (cmds args)
+                  >>= dealWithMrOrPush h (isMr args)
+  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
+
+  where dealWithMrOrPush h s =
+          if isMr' $ s
+          then (notify h args) >> throwError
+          else throwError
+
 -- Accept if pass test otherwise throw an error
 notify :: Homer -> KayleArgs -> Bool -> IO ()
 notify h args False = notify' h args (fromList [(target args, "F")])
