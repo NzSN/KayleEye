@@ -43,7 +43,7 @@ contentUpdateStmt = "UPDATE " ++ procTbl ++
 searchLetterStmt :: String -> String
 searchLetterStmt tblN = "SELECT ident,content FROM " ++ tblN ++ " WHERE ident = ?"
 
-data BoxKey = BoxKey { key :: Connection }
+data BoxKey = BoxKey { key :: Connection } | BoxBrokenKey
 
 boxInit :: BoxKey -> IO ()
 boxInit key_ = do
