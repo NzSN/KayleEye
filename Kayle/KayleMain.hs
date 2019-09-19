@@ -71,10 +71,10 @@ doJudge' args configs =
 
   where
     -- Take actions correspond to the type of request
-    dealWithMrOrPush h s =
+    dealWithMrOrPush h s x =
       if isMr' $ s
-      then (notify h args) >> throwError
-      else throwError
+      then (notify h args x) >> throwError x
+      else throwError x
     -- Throw if judge failed
     throwError bool = if bool == False then error "Test failed" else return ()
 
