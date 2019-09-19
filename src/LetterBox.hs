@@ -54,10 +54,10 @@ boxInit key_ = do
 
   if elem procTbl tblN
     then return ()
-    else run conn (tableCreateStmt procTbl) [] >> return ()
+    else withRTSSignalsBlocked $ run conn (tableCreateStmt procTbl) [] >> return ()
   if elem historyTbl tblN
     then return ()
-    else run conn (tableCreateStmt historyTbl) [] >> return ()
+    else withRTSSignalsBlocked $ run conn (tableCreateStmt historyTbl) [] >> return ()
 
   commit conn
 
@@ -80,7 +80,7 @@ insertLetter :: BoxKey
              -> Letter
              -> IO ()
 insertLetter key_ tblN letter = do
-  run (key key_) ("INSERT INTO " ++ tblN ++ " VALUES (?, ?)")
+  withRTSSignalsBlocked $ run (key key_) ("INSERT INTO " ++ tblN ++ " VALUES (?, ?)")
     [toSql (ident letter), toSql (encode $ (content letter))]
   commit (key key_)
 
@@ -89,7 +89,7 @@ searchLetter :: BoxKey
              -> String -- Identity
              -> MaybeT IO Letter
 searchLetter key_ tbl ident_ = MaybeT $ do
-  letters <- quickQuery' (key key_) (searchLetterStmt tbl) [toSql ident_]
+  letters <- withRTSSignalsBlocked $ quickQuery' (key key_) (searchLetterStmt tbl) [toSql ident_]
 
   if not $ Prelude.null letters
     then return $ Just $ head $ Prelude.map toLetter letters
@@ -106,7 +106,7 @@ removeLetter :: BoxKey
              -> String -- Identity
              -> IO ()
 removeLetter key_ tbl ident_ = do
-  run (key key_) ("DELETE FROM " ++ tbl ++ " WHERE ident = ?") [toSql ident_]
+  withRTSSignalsBlocked $ run (key key_) ("DELETE FROM " ++ tbl ++ " WHERE ident = ?") [toSql ident_]
   commit (key key_)
 
 isLetterExists :: BoxKey
