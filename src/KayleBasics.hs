@@ -162,3 +162,8 @@ configGet :: Configs -> (Configs -> Maybe a) -> String -> a
 configGet cfgs f errMsg = case f cfgs of
                      Nothing  -> error errMsg
                      Just opt -> opt
+cGetServer :: Configs -> ServerInfo_cfg
+cGetServer c = configGet c serverInfoGet serverAddr_err_msg
+
+cGetCmds :: Configs -> TestContent_cfg
+cGetCmds c = configGet c testCmdGet test_cmd_err_msg
