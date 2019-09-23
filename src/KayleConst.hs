@@ -2,6 +2,17 @@
 
 module KayleConst where
 
+k_ok :: Integer
+k_ok = 0
+
+k_error :: Integer
+k_error = 1
+
+boxKeyRetryInterval = 10 * second_micro_int
+
+second_micro_int :: Int
+second_micro_int = 1000000
+
 -- Unit is microseconds
 seconds_micro :: Integer
 seconds_micro = 1000000

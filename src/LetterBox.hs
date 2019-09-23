@@ -74,6 +74,9 @@ boxKeyCreate hn un pn dn = do
     mysqlDatabase = dn }
   return $ BoxKey conn
 
+commitKey :: BoxKey -> IO ()
+commitKey bKey = commit (key bKey)
+
 -- Search letter from database via proj name and sha-1 value
 insertLetter :: BoxKey
              -> String -- Table name
@@ -82,7 +85,7 @@ insertLetter :: BoxKey
 insertLetter key_ tblN letter = do
   withRTSSignalsBlocked $ run (key key_) ("INSERT INTO " ++ tblN ++ " VALUES (?, ?)")
     [toSql (ident letter), toSql (encode $ (content letter))]
-  commit (key key_)
+  return ()
 
 searchLetter :: BoxKey
              -> String -- Table name
@@ -107,7 +110,7 @@ removeLetter :: BoxKey
              -> IO ()
 removeLetter key_ tbl ident_ = do
   withRTSSignalsBlocked $ run (key key_) ("DELETE FROM " ++ tbl ++ " WHERE ident = ?") [toSql ident_]
-  commit (key key_)
+  return ()
 
 isLetterExists :: BoxKey
                -> String -- Table name
@@ -138,12 +141,11 @@ updateLetter key_ ident_ content status = do
     -- Move content from procTbl to historyTbl
     moveToHistory letter_ (Just x) =
       (insertLetter key_ historyTbl (Letter (ident letter_) (header letter_) x))
-      >> removeLetter key_ procTbl (ident letter_)
-      >> commit (key key_) >> return 1
+      >> removeLetter key_ procTbl (ident letter_) >> return 1
     -- Steps to update procTbl or historyTbl
     updating l True = moveToHistory l decodedContent
     updating l False = run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]
-                       >> commit (key key_) >> return 0
+                       >> return 0
 
 -- Test cases
 boxTest :: Test

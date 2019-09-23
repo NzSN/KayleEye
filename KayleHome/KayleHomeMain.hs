@@ -38,6 +38,9 @@ import Data.Maybe
 -- Json
 import Data.Aeson
 
+-- Database
+import Database.HDBC
+
 -- Homer
 import Homer as H
 import LetterBox
@@ -56,13 +59,11 @@ data KayleEnv = KayleEnv { envCfg :: Configs,
                            envHomer :: Homer,
                            envKey :: BoxKey }
 
-type Kayle = ReaderT KayleEnv (LoggerT IO) ()
+type Kayle = ReaderT KayleEnv (LoggerT IO) Integer
 
 runKayle :: Kayle -> KayleEnv -> IO ()
 runKayle k e =
-  (doLogger (runReaderT k e) (last $ envArgs e))
-  -- loop to deal with next requests
-  >> runKayle k e
+  runLoggerT (runReaderT k e) >> return ()
 
 main = do
   -- Spawn http client manager
@@ -88,81 +89,108 @@ main = do
 -- Append log message to Kayle
 logKayle h = lift . appendLogger h
 
+waitKey_until :: Configs -> IO BoxKey
+waitKey_until c = let dbOpts = configGet c databaseGet db_err_msg
+                in catchSql (boxKeyCreate (C.db_host dbOpts) (C.db_user dbOpts) (C.db_pass dbOpts) (C.db dbOpts))
+                   (\_ -> (threadDelay boxKeyRetryInterval) >> waitKey_until c)
+
 doKayle :: Kayle
-doKayle = do
-  env <- ask
+doKayle = ask >>= \l -> procLoop Empty_letter l
+  where
+    procLoop :: Letter -> KayleEnv -> Kayle
+    procLoop l env = do
+      let homer = envHomer env
+          bKey = envKey env
 
-  let homer = envHomer env
-      bKey = envKey env
+      logKayle "Info" "Ready to process requests"
 
-  logKayle "Info" "Ready to process requests"
+      letter <- if isEmptyLetter l
+                then liftIO . waitHomer $ homer
+                else return l
 
-  letter <- liftIO . waitHomer $ homer
-  logKayle "Info" $ "Received Letter : " ++ (show letter)
+      logKayle "Info" $ "Received Letter : " ++ (show letter)
 
-  exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
-  if not exists
-    then do procExists <- liftIO . isLetterExists bKey procTbl $ (ident letter)
-            if not procExists
-              then newLetter letter env
-              else inProcLetter letter env
-    else return ()
-        -- Function to process new incomming letter
-  where newLetter :: Letter -> KayleEnv -> Kayle
-        newLetter l env =
-          let cfgs = envCfg env
-              bKey = envKey env
-          in (return $ letterInit cfgs l)
-             >>= \x -> if isNothing x
-                        then logKayle "Error" "letterInit failed"
-                        else newLetterProc l (fromJust x) env bKey
+      -- fixme: should provide function to deal with different error type
+      eType <- liftIO . catchSql (procHandler letter bKey env) $ (\_ -> return k_error)
 
-        -- Function to deal with situation there is only one test content in config
-        newLetterProc :: Letter -- Letter generate by letterInit
-                      -> Letter -- Letter is received from KayleEye
-                      -> KayleEnv
-                      -> BoxKey
-                      -> Kayle
-        newLetterProc rl l e b = if sizeOfLetter l == 1
-                            then newLetterInsert l historyTbl b >>
-                                   if isTestSuccess l
-                                   then liftIO . K.accept (envMng e) (envCfg e)
-                                        $ (fromJust $ retriFromHeader rl "iid")
-                                   else return ()
-                            else newLetterInsert l procTbl b
-        -- Function to insert new letter into table
-        newLetterInsert :: Letter -> String -> BoxKey -> Kayle
-        newLetterInsert l tbl k =
-          (logKayle "Info" $ "Insert letter : " ++ (show l) ++ " Into " ++ tbl)
-          >> (liftIO . insertLetter k tbl) l
-        -- Function to process inProc letter
-        inProcLetter :: Letter -> KayleEnv -> Kayle
-        inProcLetter l env =
-          let cfgs = envCfg env
-              bKey = envKey env
-          in (liftIO . runMaybeT $ searchLetter bKey procTbl (ident l))
-             >>= (\x -> if isNothing x
-                        then logKayle "Warning" "Letter doesn't exists"
-                        else inProcDo l (fromJust x) env)
-        -- Function to update received letter into box
-        inProcDo :: Letter -- The recevied letter
-                 -> Letter -- The letter from box
-                 -> KayleEnv -> Kayle
-        inProcDo rl bl env =
-          let content = H.content rl
-             -- Update the letter from box
-          in (return $ letterUpdate' bl
-               [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
-             -- Put the letter from box back to box
-             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
-                        (liftIO . updateLetter (envKey env) (H.ident x)
-                         (encode $ H.content x) $ isTestFinished x))
-             -- To check that whether the test describe by the letter is done
-             >>= (\x -> if x == 1 && isTestSuccess rl
-                        then logKayle "Info" "Accpet Letter"
-                             >> (liftIO . K.accept (envMng env) (envCfg env)
-                                 $ (fromJust $ retriFromHeader rl "iid"))
-                        else return ())
+      case eType of
+        -- OK
+        0 -> procLoop Empty_letter env
+        -- ERROR, just retry the letter with new box key.
+        1 -> (liftIO . waitKey_until $ (envCfg env))
+          >>= \x -> let env_new = KayleEnv (envCfg env) (envMng env) (envArgs env) (envHomer env) x
+                    in procLoop l env_new
+
+    procHandler l b e = doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e) >> return k_ok
+    -- Function to process new incomming letter
+    procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
+    procLetter letter bKey env = do
+        exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
+        if not exists
+            then do procExists <- liftIO . isLetterExists bKey procTbl $ (ident letter)
+                    if not procExists
+                    then newLetter letter env
+                    else inProcLetter letter env
+            else return k_ok
+
+    -- Function to deal with the first arrived letter of a project
+    newLetter :: Letter -> KayleEnv -> Kayle
+    newLetter l env =
+        let cfgs = envCfg env
+            bKey = envKey env
+        in (return $ letterInit cfgs l)
+            >>= \x -> if isNothing x
+                    then logKayle "Error" "letterInit failed"
+                    else newLetterProc l (fromJust x) env bKey
+
+    -- Function to deal with situation there is only one test content in config
+    newLetterProc :: Letter -- Letter generate by letterInit
+                    -> Letter -- Letter is received from KayleEye
+                    -> KayleEnv
+                    -> BoxKey
+                    -> Kayle
+    newLetterProc rl l e b = if sizeOfLetter l == 1
+                        then newLetterInsert l historyTbl b >>
+                                if isTestSuccess l
+                                then (liftIO . K.accept (envMng e) (envCfg e)
+                                    $ (fromJust $ retriFromHeader rl "iid"))
+                                    >> return k_ok
+
+                                else return k_ok
+                        else newLetterInsert l procTbl b
+    -- Function to insert new letter into table
+    newLetterInsert :: Letter -> String -> BoxKey -> Kayle
+    newLetterInsert l tbl k =
+        (logKayle "Info" $ "Insert letter : " ++ (show l) ++ " Into " ++ tbl)
+        >> (liftIO . insertLetter k tbl) l >> return k_ok
+    -- Function to process inProc letter
+    inProcLetter :: Letter -> KayleEnv -> Kayle
+    inProcLetter l env =
+        let cfgs = envCfg env
+            bKey = envKey env
+        in (liftIO . runMaybeT $ searchLetter bKey procTbl (ident l))
+            >>= (\x -> if isNothing x
+                    then logKayle "Warning" "Letter doesn't exists"
+                    else inProcDo l (fromJust x) env)
+    -- Function to update received letter into box
+    inProcDo :: Letter -- The recevied letter
+                -> Letter -- The letter from box
+                -> KayleEnv -> Kayle
+    inProcDo rl bl env =
+        let content = H.content rl
+            -- Update the letter from box
+        in (return $ letterUpdate' bl
+            [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
+            -- Put the letter from box back to box
+            >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
+                    (liftIO . updateLetter (envKey env) (H.ident x)
+                        (encode $ H.content x) $ isTestFinished x))
+            -- To check that whether the test describe by the letter is done
+            >>= (\x -> if x == 1 && isTestSuccess rl
+                    then logKayle "Info" "Accpet Letter"
+                            >> (liftIO . K.accept (envMng env) (envCfg env) $ (fromJust $ retriFromHeader rl "iid"))
+                            >> return k_ok
+                    else return k_ok)
 
 
 -- Generate a letter via exists letter and configuration

@@ -54,7 +54,7 @@ data Homer = Homer { rSocket :: Socket, rAddr :: SockAddr }
 -- Letter
 data Letter = Letter { ident :: IdentStr,
                        header :: Map String String,
-                       content :: Map String String } deriving Show
+                       content :: Map String String } | Empty_letter deriving Show
 
 instance ToJSON Letter where
   toJSON (Letter ident header content) =
@@ -70,6 +70,10 @@ instance FromJSON Letter where
 
 sizeOfLetter :: Letter -> Int
 sizeOfLetter l = size . content $ l
+
+isEmptyLetter :: Letter -> Bool
+isEmptyLetter Empty_letter = True
+isEmptyLetter _ = False
 
 emptyLetter :: Letter
 emptyLetter = Letter "" Map.empty Map.empty

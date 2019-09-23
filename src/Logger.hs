@@ -89,9 +89,9 @@ doLogger l path = do
 
 appendLogger :: String -- Header
              -> String -- Content
-             -> Logger ()
+             -> Logger Integer
 appendLogger h c = LoggerT $ do
-  return $ writer ((), Lb (length h + length c, h ++ ":" ++ c ++ "\n"))
+  return $ writer (0, Lb (length h + length c, h ++ ":" ++ c ++ "\n"))
 
 -- Test cases
 loggerTest :: Test
