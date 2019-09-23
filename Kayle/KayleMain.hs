@@ -65,7 +65,13 @@ doJudge' args configs =
   let serverOpts = cGetServer configs
       testCmds = cGetCmds configs
       -- Testing
-      testing h = judge testCmds (cmds args)
+      testing h = judge testCmds (cmds args) False
+                  -- If first test is failed then run the commands
+                  -- pair with @failed, this provide opportunity to
+                  -- do clean and try again.
+                  >>= (\x -> if x == False
+                            then judge testCmds "@failed" True
+                            else return True)
                   >>= dealWithMrOrPush h (isMr args)
   in pickHomer (addr serverOpts) (port serverOpts) >>= testing
 
@@ -91,14 +97,18 @@ notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
 
 judge :: TestContent_cfg
       -> String -- Build commands
+      -> Bool   -- Is in exclusive mode
       -> IO Bool
-judge TestContent_None bCmds = return True
-judge c bCmds = do
+judge TestContent_None bCmds isExclusive = return True
+judge c bCmds isExclusive = do
   let cmds = C.content c
       controls = splitOn " " bCmds
-  -- "@" Which is default control command for a test command
-  -- it means the test command can be run.
-  loop cmds $ ("@":controls)
+
+  if isExclusive
+    then loop cmds $ controls
+    -- "@" Which is default control command for a test command
+    -- it means the test command can be run.
+    else loop cmds $ ("@":controls)
   where
     loop (cmd:cmds) controls = do
       let control_str = fst cmd
