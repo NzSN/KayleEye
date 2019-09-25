@@ -34,7 +34,8 @@ data KayleArgs = KayleArgs {
   iid :: String,
   configPath :: String,
   cmds :: String,
-  isMr :: String } deriving Show
+  -- Event's value is "push" or "merge_request"
+  event :: String } deriving Show
 
 getKayleArgs :: IO KayleArgs
 getKayleArgs = do
@@ -49,7 +50,7 @@ getKayleArgs = do
     ((!!) args 6) -- isMr
 
 isMr' :: String -> Bool
-isMr' s = s == "Y"
+isMr' s = s == KConst.mr_event
 
 main :: IO ()
 main = let beginToJudge args =
@@ -72,15 +73,10 @@ doJudge' args configs =
                   >>= (\x -> if x == False
                             then judge testCmds "@failed" True
                             else return True)
-                  >>= dealWithMrOrPush h (isMr args)
+                  >>= \x -> (notify h args x) >> throwError x
   in pickHomer (addr serverOpts) (port serverOpts) >>= testing
 
   where
-    -- Take actions correspond to the type of request
-    dealWithMrOrPush h s x =
-      if isMr' $ s
-      then (notify h args x) >> throwError x
-      else throwError x
     -- Throw if judge failed
     throwError bool = if bool == False then error "Test failed" else return ()
 
@@ -91,7 +87,7 @@ notify h args True = notify' h args (fromList [(target args, "T")])
 
 notify' :: Homer -> KayleArgs -> Map String String -> IO ()
 notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
-                           h = fromList [("iid", (iid args))]
+                           h = fromList [("event", event args), ("iid", iid args)]
                            l = Letter i h c
                        in homerFlyWith homer l >> return ()
 
@@ -108,7 +104,7 @@ judge c bCmds isExclusive = do
     then loop cmds $ controls
     -- "@" Which is default control command for a test command
     -- it means the test command can be run.
-    else loop cmds $ ("@":controls)
+    else loop cmds $ ("@ ":controls)
   where
     loop (cmd:cmds) controls = do
       let control_str = fst cmd

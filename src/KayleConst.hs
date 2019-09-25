@@ -13,6 +13,9 @@ boxKeyRetryInterval = 10 * second_micro_int
 second_micro_int :: Int
 second_micro_int = 1000000
 
+mr_event = "merge_request"
+push_event = "push"
+
 -- Unit is microseconds
 seconds_micro :: Integer
 seconds_micro = 1000000

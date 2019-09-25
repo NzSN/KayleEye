@@ -142,7 +142,7 @@ updateLetter key_ ident_ content status = do
     moveToHistory letter_ (Just x) =
       (insertLetter key_ historyTbl (Letter (ident letter_) (header letter_) x))
       >> removeLetter key_ procTbl (ident letter_) >> return 1
-    -- Steps to update procTbl or historyTbl
+    -- Steps to update procTbl
     updating l True = moveToHistory l decodedContent
     updating l False = run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]
                        >> return 0
