@@ -27,7 +27,8 @@ isEmpty :: Configs -> Bool
 isEmpty Configs_Empty = True
 isEmpty _ = False
 
-data Projects_cfg = ProjectsConfig_cfg { projName :: String } deriving Show
+data PrivToken_cfg = PrivToken_cfg { priToken :: String }
+data Projects_cfg = ProjectsConfig_cfg { projName :: String, projID :: String } deriving Show
 data TestProject_cfg = TestProject_cfg { testContent :: Map String [String] } deriving Show
 data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String } deriving Show
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
@@ -73,6 +74,7 @@ optHead = do
          try (string "MRAcceptApi")   <|>
          try (string "MRRebaseApi")   <|>
          try (string "Email")         <|>
+         try (string "PrivateToken")  <|>
          try (string "TestProject")   <|>
          try (string "Database")      <|>
          try (string "ServerAddr")    <|>
@@ -208,8 +210,8 @@ listProjConfig :: Configs -> Maybe Projects_cfg
 listProjConfig opts = do
   if isNothing prjs
     then Nothing
-    else let prj_ = fromJust prjs
-         in return $ ProjectsConfig_cfg (configVal $ head $ configList prj_)
+    else let prj_ = configPair . head . configList . fromJust $ prjs
+         in return $ ProjectsConfig_cfg (configVal . fst $ prj_) (configVal . snd $ prj_)
   where prjs = searchConfig "Projects" opts
 
 isProjExists :: String -> Configs -> Bool
@@ -261,6 +263,10 @@ serverInfoGet :: Configs -> Maybe ServerInfo_cfg
 serverInfoGet opts = configRetrive opts "ServerAddr"
   (\(Configs_L cfg) -> ServerInfo_cfg (configVal $ head cfg) (configVal $ last cfg))
 
+priTokenGet :: Configs -> Maybe PrivToken_cfg
+priTokenGet opts = configRetrive opts "PrivateToken"
+  (\(Configs_L cfg) -> PrivToken_cfg (configVal $ head cfg))
+
 -- Test cases
 parserTest :: Test
 parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
@@ -288,15 +294,6 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       assertEqual "Email" (user email) "gpon_olt@szgcom.com"
       assertEqual "Email" (pass email) "Gcom123"
 
-      -- Accept Api
-      let acceptApi = fromJust $ mrAcceptApiConfig config
-      assertEqual "AcceptApi" (a_api acceptApi)
-        "http://gpon.git.com:8011/api/v4/projects/56/merge_requests/*/merge?private_token=D_-yvMKXNJcqpQxZr_CU"
-
-      -- Rebase Api
-      let rebaseApi = fromJust $ mrRebaseApiConfig config
-      assertEqual "RebaseApi" (r_api rebaseApi) "http://gpon.git.com:8011/api/v4/projects/56/merge_requests/*/rebase?private_token=D_-yvMKXNJcqpQxZr_CU"
-
       -- Server Info
       let serverInfo = fromJust $ serverInfoGet config
       assertEqual "ServerInfo" (addr serverInfo) "0.0.0.0"
@@ -308,6 +305,10 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       assertEqual "Database" (db_user dbInfo) "kayle"
       assertEqual "Database" (db_pass dbInfo) "kayleKey"
       assertEqual "Database" (db      dbInfo) "kayledb"
+
+      -- Private Token
+      let pToken = fromJust $ priTokenGet config
+      assertEqual "Token" "12345678" (priToken pToken)
 
       let cmd = fromJust $ testCmdGet config
       print cmd

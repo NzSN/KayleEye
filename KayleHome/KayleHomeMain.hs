@@ -6,6 +6,8 @@ module Main where
 
 import Debug.Trace
 
+import Data.String.Conversions (cs)
+
 -- Http Request
 import Network.HTTP.Client
 import Network.HTTP.Types.Status (statusCode)
@@ -47,6 +49,7 @@ import LetterBox
 import KayleConst
 import Logger
 import KayleBasics as K
+import RepoOps as R
 
 import Control.Concurrent
 
@@ -72,7 +75,7 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
-
+  print configs
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
   homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
 
@@ -111,7 +114,7 @@ doKayle = ask >>= \l -> procLoop Empty_letter l
       logKayle "Info" $ "Received Letter : " ++ (show letter)
 
       -- fixme: should provide function to deal with different error type
-      eType <- liftIO . catchSql (procHandler letter bKey env) $ (\_ -> return k_error)
+      eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
 
       case eType of
         -- OK
@@ -121,7 +124,8 @@ doKayle = ask >>= \l -> procLoop Empty_letter l
           >>= \x -> let env_new = KayleEnv (envCfg env) (envMng env) (envArgs env) (envHomer env) x
                     in procLoop l env_new
 
-    procHandler l b e = doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e) >> return k_ok
+    procHandler = \_ -> return k_error :: IO Integer
+    procLetter' l b e = doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e) >> return k_ok
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
     procLetter letter bKey env = do
@@ -152,11 +156,8 @@ doKayle = ask >>= \l -> procLoop Empty_letter l
     newLetterProc rl l e b = if sizeOfLetter l == 1
                         then newLetterInsert l historyTbl b >>
                                 if isTestSuccess l
-                                then (liftIO . K.accept (envMng e) (envCfg e)
-                                    $ (fromJust $ retriFromHeader rl "iid"))
-                                    >> return k_ok
-
-                                else return k_ok
+                                then action True rl e
+                                else action False rl e
                         else newLetterInsert l procTbl b
     -- Function to insert new letter into table
     newLetterInsert :: Letter -> String -> BoxKey -> Kayle
@@ -179,19 +180,53 @@ doKayle = ask >>= \l -> procLoop Empty_letter l
     inProcDo rl bl env =
         let content = H.content rl
             -- Update the letter from box
-        in (return $ letterUpdate' bl
-            [ (k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
+        in (return $ letterUpdate' bl [(k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
             -- Put the letter from box back to box
             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
-                    (liftIO . updateLetter (envKey env) (H.ident x)
-                        (encode $ H.content x) $ isTestFinished x))
+                    (liftIO . updateLetter (envKey env) (H.ident x) (encode $ H.content x) $ isTestFinished x))
             -- To check that whether the test describe by the letter is done
             >>= (\x -> if x == 1 && isTestSuccess rl
-                    then logKayle "Info" "Accpet Letter"
-                            >> (liftIO . K.accept (envMng env) (envCfg env) $ (fromJust $ retriFromHeader rl "iid"))
-                            >> return k_ok
-                    else return k_ok)
+                    then logKayle "Info" "Accpet Letter" >> action True rl env
+                    else action False rl env)
 
+-- Action be perform after test project done
+action :: Bool -> Letter -> KayleEnv -> Kayle
+action success l env = do
+  let event = fromJust $ retriFromHeader l "event"
+      sha = last . identSplit . ident $ l
+      subject = if success
+                then "CI Success: " ++ sha
+                else "CI Failed: " ++ sha
+
+  if event == mr_event
+    -- Accept the merge request and send email
+    then let iid = fromJust $ retriFromHeader l "iid"
+         in (liftIO . R.accept (envMng env) (envCfg env) $ iid)
+            >> (liftIO . commitMessage env $ l)
+            >>= (\body -> liftIO . K.notify (cs body) subject $ (envCfg env))
+            >> return k_ok
+    -- For push event we just send email to notify
+    else (liftIO . commitMessage env $ l )
+         >>= (\body -> liftIO . K.notify (cs body) subject $ (envCfg env))
+         >> return k_ok
+  where
+    mapFunc "F" = "Failed"
+    mapFunc "T" = "Successed"
+    -- Which should never happened
+    mapFunc _ = "Pending"
+    mapFunc' = \acc x -> acc ++ (fst x) ++ " -- " ++ (mapFunc . snd $ x) ++ "\n"
+
+    commitMessage :: KayleEnv -> Letter -> IO String
+    commitMessage env l = do
+      let sha = last . identSplit . ident $ l
+
+      message <- commitMsg (envMng env) (envCfg env) sha
+      -- The letter must exists
+      Just letter <- runMaybeT $ searchLetter (envKey env) historyTbl (ident l)
+
+      let content = toList . H.content $ letter
+          content' = Prelude.foldl mapFunc' "" content
+      return $ message ++ "\n" ++ content'
 
 -- Generate a letter via exists letter and configuration
 letterInit :: Configs -> Letter -> Maybe Letter

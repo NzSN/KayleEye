@@ -19,6 +19,8 @@ import Data.Text.Internal as Internal
 
 import Control.Exception.Base
 
+import qualified Data.ByteString.Lazy as BL
+
 import System.IO
 import System.Directory
 import System.Environment
@@ -55,55 +57,6 @@ loadConfig proj path = do
       let config = fromRight Configs_Empty $ parseConfig contents
       return config
 
--- Accept an merge request into main branch
-accept :: Manager -> Configs
-       -> String -- iid, Merge request id
-       -> IO ()
-accept mng cfgs iid = do
-  args <- getArgs
-
-  let acceptUrl = replace_iid
-                  (a_api $ configGet cfgs mrAcceptApiConfig accept_err_msg) iid
-  code <- put_req acceptUrl mng
-
-  case code of
-    -- If merge request is unable to be accepted (ie: Work in Progress,
-    -- Closed, Pipeline Pending Completion, or Failed while requiring Success) -
-    -- you’ll get a 405 and the error message ‘Method Not Allowed’
-    405 -> notify "Merge request is unable to be accepted" cfgs
-    -- If it has some conflicts and can not be merged - you’ll get a 406 and
-    -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs iid >> delay (3 * seconds_micro) >> print "fixme"
-    -- If the sha parameter is passed and does not match the HEAD of the source -
-    -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
-    409 -> notify "SHA does not match HEAD of source branch" cfgs
-    -- If you don’t have permissions to accept this merge request - you’ll get a 401
-    401 -> notify "Permissions denied" cfgs
-    -- Merge request not found or the url is wrong
-    404 -> notify "Merge requests not found or the url is wrong" cfgs
-    -- Success
-    200 -> return ()
-
--- Rebase merge request to target branch
-rebase :: Manager -> Configs
-       -> String -- iid, Merge request id
-       -> IO ()
-rebase mng cfgs iid = do
-  args <- getArgs
-  let rebaseUrl = replace_iid
-                  (r_api $ configGet cfgs mrRebaseApiConfig rebase_err_msg) iid
-  code <- put_req rebaseUrl mng
-
-  case code of
-    -- If you don’t have permissions to push to the merge request’s source branch -
-    -- you’ll get a 403 Forbidden response.
-    403 -> notify "Permission denied to rebase merge request" cfgs
-    -- The API will return a 202 Accepted response if the request is enqueued successfully
-    -- Merge request not found or the url is wrong
-    404 -> notify "Merge requests not found or the url is wrong" cfgs
-    -- Success
-    202 -> return ()
-
 -- Put event to http server
 put_req :: String -> Manager -> IO Int
 put_req url mng = do
@@ -111,9 +64,17 @@ put_req url mng = do
   response <- httpLbs (initialRequest { method = "PUT" }) mng
   return $ statusCode $ responseStatus response
 
+get_req :: String -> Manager -> IO (Int, BL.ByteString)
+get_req url mng = do
+  initialRequest <- parseRequest url
+  response <- httpLbs initialRequest mng
+  return $ (statusCode $ responseStatus response, (cs $ responseBody response))
+
+
 -- Notify via email
-notify :: Lazy.Text -> Configs -> IO ()
-notify content cfgs = do
+-- fixme: pass user as argument of this function
+notify :: Lazy.Text -> String -> Configs -> IO ()
+notify content sub cfgs = do
   let mailInfo = fromJust $ emailInfoGet $ cfgs
       hostName = Config.host mailInfo
       user = Config.user mailInfo
@@ -125,7 +86,7 @@ notify content cfgs = do
       to   = [Address (Just "admin") adminEmail]
       cc   = []
       bcc  = []
-      subject = "CI informations"
+      subject = (cs sub)
       body    = plainTextPart content
 
   let mail = simpleMail from to cc bcc subject [body]
@@ -156,6 +117,13 @@ replace_iid :: String -> String -> String
 replace_iid ('*':xs) iid = iid ++ replace_iid xs iid
 replace_iid (x:xs) iid = x : replace_iid xs iid
 replace_iid "" iid = ""
+
+replaceAll :: String -> [String] -> String
+replaceAll ('*':xs) (y:ys) = y ++ replaceAll xs ys
+replaceAll (x:xs) str@(y:ys) = x:replaceAll xs str
+replaceAll (x:xs) [] = x:replaceAll xs []
+replaceAll "" (y:ys) = ""
+replaceAll "" [] = ""
 
 -- Search option from Configs
 configGet :: Configs -> (Configs -> Maybe a) -> String -> a
