@@ -126,7 +126,8 @@ doKayle = ask >>= \l -> procLoop Empty_letter l
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
-    procLetter' l b e = doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e) >> return k_ok
+    procLetter' l b e = doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e)
+                        >> commitKey b >> return k_ok
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
     procLetter letter bKey env = do
@@ -186,18 +187,18 @@ doKayle = ask >>= \l -> procLoop Empty_letter l
             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
                     (liftIO . updateLetter (envKey env) (H.ident x) (encode $ H.content x) $ isTestFinished x))
             -- To check that whether the test describe by the letter is done
-            >>= (\x -> if x == 1 && isTestSuccess rl
-                    then logKayle "Info" "Accpet Letter" >> action True rl env
-                    else action False rl env)
+            >>= (\x -> if x == 1
+                         then if isTestSuccess rl
+                           then logKayle "Info" "Accpet Letter" >> action True rl env
+                           else action False rl env
+                         else return k_ok)
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle
 action success l env = do
   let event = fromJust $ retriFromHeader l "event"
       sha = last . identSplit . ident $ l
-      subject = if success
-                then "CI Success: " ++ sha
-                else "CI Failed: " ++ sha
+      subject = "CI Information on commit :" ++ sha
 
   if event == mr_event
     -- Accept the merge request and send email
@@ -223,11 +224,14 @@ action success l env = do
 
       message <- commitMsg (envMng env) (envCfg env) sha
       -- The letter must exists
-      Just letter <- runMaybeT $ searchLetter (envKey env) historyTbl (ident l)
+      letterMay <- runMaybeT $ searchLetter (envKey env) historyTbl (ident l)
 
-      let content = toList . H.content $ letter
-          content' = Prelude.foldl mapFunc' "" content
-      return $ message ++ "\n" ++ content'
+      if isNothing letterMay
+        then return ""
+        else let letter = fromJust letterMay
+                 content = toList . H.content $ letter
+                 content' = Prelude.foldl mapFunc' "" content
+             in return $ message ++ "\n" ++ content'
 
 -- Generate a letter via exists letter and configuration
 letterInit :: Configs -> Letter -> Maybe Letter
