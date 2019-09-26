@@ -104,7 +104,7 @@ judge c bCmds isExclusive = do
     then loop cmds $ controls
     -- "@" Which is default control command for a test command
     -- it means the test command can be run.
-    else loop cmds $ ("@ ":controls)
+    else loop cmds $ ("@":controls)
   where
     loop (cmd:cmds) controls = do
       let control_str = fst cmd
