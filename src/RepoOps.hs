@@ -21,9 +21,15 @@ import KayleBasics
 import Data.String.Conversions (cs)
 import Control.Concurrent.Thread.Delay
 
+import Text.Regex.TDFA
+
+import Data.Time.Clock
+import Data.Time.Calendar
+
 acceptUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
 rebaseUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/rebase?private_token=*"
 commitsUrl = "http://gpon.git.com:8011/api/v4/projects/*/repository/commits/*?private_token=*"
+mergesUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests?private_token=*"
 
 
 -- Accept an merge request into main branch
@@ -96,3 +102,91 @@ commitMsg m cfg sha = do
         else fromJust $ flip parseMaybe (fromJust o) $ \obj -> do
                msg <- obj .: cs "message"
                return msg
+
+-- Merge Request daily
+subMatch :: (a, b, c, d) -> d
+subMatch (a, b, c, d) = d
+
+mrIid :: (a, b, c) -> a
+mrIid (a, b, c) = a
+
+mrTitle :: (a, b, c) -> b
+mrTitle (a, b, c) = b
+
+mrDate :: (a, b, c) -> c
+mrDate (a, b, c) = c
+
+regex_gitlab_date_pattern :: String
+regex_gitlab_date_pattern = "([0-9]+)-([0-9]+)-([0-9]+)"
+
+regex_gitlab_date :: String -> [String]
+regex_gitlab_date dateStr =
+  let result = dateStr =~ regex_gitlab_date_pattern :: (String, String, String, [String])
+  in subMatch result
+
+regex_gitlab_year :: [String] -> String
+regex_gitlab_year date = Prelude.head $ date
+
+regex_gitlab_month :: [String] -> String
+regex_gitlab_month date = Prelude.head . Prelude.tail $ date
+
+regex_gitlab_day :: [String] -> String
+regex_gitlab_day date = Prelude.last $ date
+
+isYesterday :: [String] -> [String] -> Bool
+isYesterday today anotherDay =
+  let year_today = read (regex_gitlab_year today) :: Int
+      month_today = read (regex_gitlab_month today) :: Int
+      day_today = read (regex_gitlab_day today) :: Int
+
+      year_another = read (regex_gitlab_year anotherDay) :: Int
+      month_another = read (regex_gitlab_month anotherDay) :: Int
+      day_another = read (regex_gitlab_day anotherDay) :: Int
+
+  in if anotherDay == []
+     then False
+     else (year_today) - (year_another) == 0 &&
+          (month_today - month_today) == 0 &&
+          (day_today - day_another) == 1
+
+yesterday'sMR :: Manager -> Configs -> IO String
+yesterday'sMR m c = do
+  let token = priToken $ configGet c priTokenGet "PrivateToken not found"
+      projId = projID $ configGet c listProjConfig "Project info not found"
+      mergeUrl_ = replaceAll mergesUrl [projId, token]
+
+  time <- getCurrentTime
+  let date' = regex_gitlab_date $ showGregorian $ utctDay time
+
+  response <- get_req mergeUrl_ m
+
+  case (fst response) of
+    200 -> return $ getMRs_yesterday date' (snd response)
+    _ -> return ""
+
+  where
+    getMRs_yesterday :: [String] -> ByteString -> String
+    getMRs_yesterday date' l = do
+      let mrs = (decode l :: Maybe [Object])
+      if isNothing mrs
+        then ""
+        else let mrInfos = Prelude.map mrInfoTrans (fromJust mrs)
+             in Prelude.foldl
+                (\acc x -> let dateMerged = regex_gitlab_date (mrDate x)
+                               iid = (show $ mrIid x)
+                               title = mrTitle x
+                               isYesterday' = isYesterday date' dateMerged
+                           in if isYesterday'
+                              then acc ++ iid ++ " : " ++ title ++ "\n"
+                              else acc)
+                "" mrInfos
+
+mrInfoTrans :: Object -> (Int, String, String)
+mrInfoTrans o = let result = flip parseMaybe o $ \obj -> do
+                        a  <- obj .: cs "iid"
+                        b  <- obj .: cs "title"
+                        c  <- obj .: cs "merged_at"
+                        return (a, b, c)
+                    in if isNothing result
+                        then (0, "N/A", "N/A")
+                        else fromJust result

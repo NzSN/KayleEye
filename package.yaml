@@ -52,6 +52,8 @@ dependencies:
 - mtl
 - HUnit
 - systemd
+- regex-tdfa
+- time
 
 library:
   source-dirs: src

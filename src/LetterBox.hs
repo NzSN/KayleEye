@@ -24,16 +24,43 @@ procTbl = "processing"
 historyTbl :: String
 historyTbl = "history"
 
+memoTbl :: String
+memoTbl = "memo"
+
 -- Prepared Statements
 databaseCreateStmt :: String
 databaseCreateStmt = "CREATE DATABASE kayleHome"
 
 tableCreateStmt :: String -- Table name
                 -> String
-tableCreateStmt tblN = "CREATE TABLE " ++ tblN ++ " (" ++
+tableCreateStmt tblN = "CREATE TABLE IF NOT EXISTS " ++ tblN ++ " (" ++
                        "ident VARCHAR(50)," ++
                        "content VARCHAR(255)," ++
                        "PRIMARY KEY(ident))"
+
+-- Memory table used to keepp track of processing Letter
+-- which already in history table.
+memoTblCreateStmt :: String
+memoTblCreateStmt = "CREATE TABLE memo (" ++
+                    "ident VARCHAR(50)," ++
+                    "counter INT" ++
+                    ") ENGINE=MEMORY"
+
+memoTblNewStmt :: String
+memoTblNewStmt = "INSERT INTO memo VALUES(?, ?)"
+
+
+memoTblSetStmt :: String
+memoTblSetStmt = "UPDATE memo SET counter = ? WHERE ident = ?"
+
+memoTblGetStmt :: String
+memoTblGetStmt = "SELECT counter FROM memo WHERE ident = ?"
+
+memoTblDescStmt :: String
+memoTblDescStmt = "UPDATE memo SET counter = (counter - 1) WHERE ident = ?"
+
+memoTblDelStmt :: String
+memoTblDelStmt = "DELETE FROM memo WHERE ident = ?"
 
 contentUpdateStmt :: String
 contentUpdateStmt = "UPDATE " ++ procTbl ++
@@ -49,15 +76,12 @@ boxInit :: BoxKey -> IO ()
 boxInit key_ = do
   let conn = key key_
 
-  tables <- quickQuery' conn ("SHOW TABLES") []
-  let tblN = Prelude.map (\[sqlTblN] -> fromSql sqlTblN) tables :: [String]
-
-  if elem procTbl tblN
-    then return ()
-    else withRTSSignalsBlocked $ run conn (tableCreateStmt procTbl) [] >> return ()
-  if elem historyTbl tblN
-    then return ()
-    else withRTSSignalsBlocked $ run conn (tableCreateStmt historyTbl) [] >> return ()
+  -- Create processing table
+  withRTSSignalsBlocked $ run conn (tableCreateStmt procTbl) [] >> return ()
+  -- Create history table
+  withRTSSignalsBlocked $ run conn (tableCreateStmt historyTbl) [] >> return ()
+  -- Memory table
+  withRTSSignalsBlocked $ run conn memoTblCreateStmt [] >> return ()
 
   commit conn
 
@@ -144,8 +168,48 @@ updateLetter key_ ident_ content status = do
       >> removeLetter key_ procTbl (ident letter_) >> return 1
     -- Steps to update procTbl
     updating l True = moveToHistory l decodedContent
-    updating l False = run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]
+    updating l False = withRTSSignalsBlocked $ run (key key_) contentUpdateStmt [toSql content, toSql (ident l)]
                        >> return 0
+
+-- Functions of memo table
+insertMemo :: BoxKey -> String -> Int -> IO ()
+insertMemo bKey ident c = do
+  withRTSSignalsBlocked $ run (key bKey) memoTblNewStmt [toSql ident, toSql c]
+  return ()
+
+setMemoCount :: BoxKey
+             -> String -- Ident of letter
+             -> Int    -- Counter's value
+             -> IO ()
+setMemoCount bKey ident count = do
+  withRTSSignalsBlocked $ run (key bKey) memoTblSetStmt [toSql ident, toSql count]
+  return ()
+
+getMemoCount :: BoxKey
+             -> String
+             -> IO Int
+getMemoCount bKey ident = do
+  count <- withRTSSignalsBlocked $ quickQuery' (key bKey) memoTblGetStmt [toSql ident]
+  return $ head $ Prelude.map toCount count
+  where
+    toCount :: [SqlValue] -> Int
+    toCount [sqlCount] = fromSql sqlCount
+
+isMemoExists :: BoxKey -> String -> IO Bool
+isMemoExists bKey ident = do
+  count <- withRTSSignalsBlocked $ quickQuery' (key bKey) memoTblGetStmt [toSql ident]
+  return $ (not $ Prelude.null count)
+
+descCountMemo :: BoxKey -> String -> IO ()
+descCountMemo bKey ident = do
+  withRTSSignalsBlocked $ run (key bKey) memoTblDescStmt [toSql ident]
+  return ()
+
+delMemo :: BoxKey -> String -> IO ()
+delMemo bKey ident = do
+  withRTSSignalsBlocked $ run (key bKey) memoTblDelStmt [toSql ident]
+  return ()
+
 
 -- Test cases
 boxTest :: Test
