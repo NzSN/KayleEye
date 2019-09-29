@@ -123,8 +123,9 @@ doKayle =
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
-    procLetter' l b e = doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e)
-                        >> commitKey b >> return k_ok
+    procLetter' l b e =
+      doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e)
+      >>= \retCode -> commitKey b >> return retCode
 
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
@@ -164,7 +165,8 @@ doKayle =
     newLetterInsert :: Letter -> String -> BoxKey -> Kayle
     newLetterInsert l tbl k =
         (logKayle "Info" $ "Insert letter : " ++ (show l) ++ " Into " ++ tbl)
-        >> (liftIO . insertLetter k tbl) l >> return k_ok
+        >> (liftIO . insertLetter k tbl) l
+        >> return k_ok
 
     -- Function to process inProc letter
     inProcLetter :: Letter -> KayleEnv -> Kayle

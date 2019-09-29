@@ -76,16 +76,18 @@ seperator = " : "
 
 type Logger a = LoggerT IO a
 
-doLogger :: Logger a -> String -> IO ()
+doLogger :: Logger Integer -> String -> IO Integer
 doLogger l path = do
   w <- runLoggerT $ l
-  let (_, logMsgs) = runWriter w
+  let (code, logMsgs) = runWriter w
   print logMsgs
   if isBufferEmpty logMsgs
-    then return ()
+    then return code
     else do file <- openFile path AppendMode
             hPutStrLn file $ bufferStr logMsgs
             hClose file
+
+            return code
 
 appendLogger :: String -- Header
              -> String -- Content
@@ -102,3 +104,5 @@ loggerTest = TestList [TestLabel "Logger Testing" (TestCase loggerAssert)]
                 appendLogger "123" "456"
                 appendLogger "789" "012"
           doLogger l ".\\log.txt"
+
+          return ()

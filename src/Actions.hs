@@ -105,7 +105,10 @@ daily_action' success l env = do
   let initedLetter = letterInit (envCfg env) l
 
   if isNothing initedLetter
-    then return k_error
+    -- Letter init failed which means the letter
+    -- is not paired with the configuration be loaded.
+    -- Just do nothing so return ok.
+    then return k_ok
     else let initedLetter' = fromJust initedLetter
          in insertLetter bKey procTbl initedLetter'
             >> return k_ok
