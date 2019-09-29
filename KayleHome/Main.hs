@@ -135,8 +135,7 @@ doKayle =
                  >>= \exists -> if not exists
                                 then newLetter letter env
                                 else inProcLetter letter env
-            else let event = fromJust $ retriFromHeader letter "event"
-                 in liftIO . actionSelector' event True letter $ env
+            else action' True letter $ env
 
     -- Function to deal with the first arrived letter of a project
     newLetter :: Letter -> KayleEnv -> Kayle
@@ -200,28 +199,7 @@ action :: Bool -> Letter -> KayleEnv -> Kayle
 action success l env =
   let event = fromJust $ retriFromHeader l "event"
   in liftIO . actionSelector event success l $ env
-
--- Generate a letter via exists letter and configuration
-letterInit :: Configs -> Letter -> Maybe Letter
-letterInit cfgs l = do
-  let letter_ident = ident_name . str2Ident . ident $ l
-      workContent_m = Map.lookup (trace letter_ident letter_ident) tContents
-  if isNothing $ workContent_m
-    then Nothing
-    else let workContent = fromJust workContent_m
-         in return $ Letter (ident l) (header l) $ fromList
-            [ letterContentItem x (H.content l) |  x <- workContent ]
-  where
-    -- Contents of all testing projects
-    tProjs = configGet cfgs (testPiecesGet (ident l)) test_proj_err_msg
-    tContents = testContent tProjs
-    -- All keys of content of letter
-    allKeys = keys $ H.content l
-    -- Item generator for content of new letter
-    letterContentItem key content =
-        if elem key allKeys
-        then (key, lookup' key content)
-        else (key, "O")
-    lookup' k m = case Map.lookup k m of
-                    Nothing -> "O"
-                    Just v  -> v
+action' :: Bool -> Letter -> KayleEnv -> Kayle
+action' success l env =
+  let event = fromJust $ retriFromHeader l "event"
+  in liftIO . actionSelector' event success l $ env

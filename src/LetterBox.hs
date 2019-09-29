@@ -41,7 +41,7 @@ tableCreateStmt tblN = "CREATE TABLE IF NOT EXISTS " ++ tblN ++ " (" ++
 -- Memory table used to keepp track of processing Letter
 -- which already in history table.
 memoTblCreateStmt :: String
-memoTblCreateStmt = "CREATE TABLE memo (" ++
+memoTblCreateStmt = "CREATE TABLE IF NOT EXISTS memo (" ++
                     "ident VARCHAR(50)," ++
                     "counter INT" ++
                     ") ENGINE=MEMORY"

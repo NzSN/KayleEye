@@ -101,6 +101,11 @@ daily_action' success l env = do
 
   -- Remove
   removeLetter bKey historyTbl ident_
-  insertLetter bKey procTbl l
 
-  return k_ok
+  let initedLetter = letterInit (envCfg env) l
+
+  if isNothing initedLetter
+    then return k_error
+    else let initedLetter' = fromJust initedLetter
+         in insertLetter bKey procTbl initedLetter'
+            >> return k_ok
