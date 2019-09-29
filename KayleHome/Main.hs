@@ -135,8 +135,8 @@ doKayle =
                  >>= \exists -> if not exists
                                 then newLetter letter env
                                 else inProcLetter letter env
-            else let event = fromJust $ retriFromHeader l "event"
-                 in actionSelector' event
+            else let event = fromJust $ retriFromHeader letter "event"
+                 in liftIO . actionSelector' event True letter $ env
 
     -- Function to deal with the first arrived letter of a project
     newLetter :: Letter -> KayleEnv -> Kayle

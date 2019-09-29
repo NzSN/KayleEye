@@ -60,7 +60,7 @@ library:
 
 executables:
   KayleEye-exe:
-    main:                KayleMain.hs
+    main:                Main.hs
     source-dirs:         Kayle
     ghc-options:
     - -threaded
@@ -70,7 +70,7 @@ executables:
     - KayleEye
 
   KayleEyeHome-exe:
-    main:                KayleHomeMain.hs
+    main:                Main.hs
     source-dirs:         KayleHome
     ghc-options:
     - -threaded

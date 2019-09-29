@@ -99,49 +99,8 @@ daily_action' success l env = do
   let ident_ = ident l
       bKey = envKey env
 
-  exists <- isMemoExists bKey ident_
+  -- Remove
+  removeLetter bKey historyTbl ident_
+  insertLetter bKey procTbl l
 
-  -- Is counter exists
-  if exists
-    -- If the counter exists and the count
-    -- is bigger than 1 then just descrease
-    -- the counter otherwise delete the c-
-    -- ounter and send email.
-    then getMemoCount bKey ident_
-         >>= \count ->
-               if count > 1
-               then descCountMemo bKey ident_ >> return k_ok
-               else delMemo bKey ident_
-                    >> send_with_mrs_or_not env l
-                    >> return k_ok
-    -- If the counter does not exists and
-    -- the content of the letter is bigger
-    -- than 1 then create a counter othe-
-    -- rwise send email.
-    else let count = (size $ content l) - 1
-         in if count > 1
-            then insertMemo bKey ident_ count
-                 >> return k_ok
-            else send_with_mrs_or_not env l
-                 >> return k_ok
-
-send_with_mrs_or_not :: KayleEnv -> Letter -> IO ()
-send_with_mrs_or_not e l =
-  isSuccess e (ident l)
-  >>= (\success ->
-          if success
-          then send_test_content e l
-          else send_test_with_mrs e l)
-
-send_test_with_mrs :: KayleEnv -> Letter -> IO ()
-send_test_with_mrs e l =
-  (commitMessage e $ l)
-  >>= (\body -> mrs >>= \mr ->
-          notify (cs $ body ++ "\n" ++ mr) (subject l) $ (envCfg e))
-  where mrs = yesterday'sMR (envMng e) (envCfg e)
-
-isSuccess :: KayleEnv -> String -> IO Bool
-isSuccess env ident = do
-  let bKey = envKey env
-  l <- runMaybeT . searchLetter bKey historyTbl $ ident
-  return $ isTestSuccess $ fromJust l
+  return k_ok
