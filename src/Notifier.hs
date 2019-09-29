@@ -3,6 +3,7 @@
 module Notifier where
 
 import Homer
+import NotifyHandler
 import Modules.ConfigReader
 
 import Control.Concurrent
@@ -12,7 +13,7 @@ type Message = [String]
 type NotifyUnit = (Event, Message)
 type Notifier = MVar (Int, [NotifyUnit])
 
-newtype NotifierConfig = NotifierConfig {
+data NotifierConfig = NotifierConfig {
   notifier :: Notifier,
   configs  :: Configs }
 
