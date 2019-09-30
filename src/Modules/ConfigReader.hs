@@ -32,6 +32,8 @@ data Projects_cfg = ProjectsConfig_cfg { projName :: String, projID :: String } 
 data TestProject_cfg = TestProject_cfg { testContent :: Map String [String] } deriving Show
 data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String } deriving Show
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
+data ExtraEmail_cfg = ExtraEmail_cfg { extraEmails :: [String] } deriving Show
+data NotifyTime_cfg = NotifyTime_cfg { notifyHour :: Int, notifyMoin :: Int } deriving Show
 data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
 data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
 data TestContent_cfg = TestContent_cfg { content :: [(String, String)] } | TestContent_None deriving Show
@@ -78,7 +80,10 @@ optHead = do
          try (string "TestProject")   <|>
          try (string "Database")      <|>
          try (string "ServerAddr")    <|>
-         (string "AdminEmail")
+         try (string "AdminEmail")    <|>
+         try (string "ExtraEmails")    <|>
+         try (string "NotifyTime")
+
   return def
 
 optDefSeperate :: GenParser Char st String
@@ -266,6 +271,18 @@ serverInfoGet opts = configRetrive opts "ServerAddr"
 priTokenGet :: Configs -> Maybe PrivToken_cfg
 priTokenGet opts = configRetrive opts "PrivateToken"
   (\(Configs_L cfg) -> PrivToken_cfg (configVal $ head cfg))
+
+extraEmailsGet :: Configs -> Maybe ExtraEmail_cfg
+extraEmailsGet opts = configRetrive opts "ExtraEmails"
+  (\(Configs_L cfg) -> ExtraEmail_cfg (map configVal cfg))
+
+notifyTimeGet :: Configs -> Maybe NotifyTime_cfg
+notifyTimeGet opts = configRetrive opts "NotifyTime"
+  (\(Configs_L cfg) ->
+     let p = configPair (head cfg)
+         h = read . configVal . fst $ p :: Int
+         m = read . configVal . snd $ p :: Int
+     in NotifyTime_cfg h m)
 
 -- Test cases
 parserTest :: Test
