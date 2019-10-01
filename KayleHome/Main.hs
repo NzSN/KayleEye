@@ -135,7 +135,8 @@ doKayle =
                  >>= \exists -> if not exists
                                 then newLetter letter env
                                 else inProcLetter letter env
-            else action' True letter $ env
+            else (logKayle "Info" "Letter is already in history table")
+                 >> (action' True letter $ env)
 
     -- Function to deal with the first arrived letter of a project
     newLetter :: Letter -> KayleEnv -> Kayle
