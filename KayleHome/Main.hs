@@ -187,10 +187,11 @@ doKayle =
         in (return $ letterUpdate' bl [(k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
             -- Put the letter from box back to box
             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
-                    (liftIO . updateLetter (envKey env) (H.ident x) (encode $ H.content x) $ isTestFinished x))
+                    (liftIO . updateLetter (envKey env) (H.ident x) (encode $ H.content x) $ isTestFinished x)
+                    >>= \y -> return (y, x))
             -- To check that whether the test describe by the letter is done
-            >>= (\x -> if x == 1
-                         then if isTestSuccess rl
+            >>= (\(code, letter) -> if code == 1
+                         then if isTestSuccess letter
                            then logKayle "Info" "Accpet Letter" >> action True rl env
                            else action False rl env
                          else return k_ok)
