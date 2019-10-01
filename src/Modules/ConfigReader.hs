@@ -17,6 +17,8 @@ import Data.Either
 import Debug.Trace (trace)
 import System.IO
 
+import Time
+
 data Configs = Configs_M { configMap :: Map String Configs }
               | Configs_L { configList :: [Configs] }
               | Configs_P { configPair :: (Configs, Configs) }
@@ -33,7 +35,7 @@ data TestProject_cfg = TestProject_cfg { testContent :: Map String [String] } de
 data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String } deriving Show
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
 data ExtraEmail_cfg = ExtraEmail_cfg { extraEmails :: [String] } deriving Show
-data NotifyTime_cfg = NotifyTime_cfg { notifyHour :: Int, notifyMoin :: Int } deriving Show
+data NotifyTime_cfg = NotifyTime_cfg { notifyTime :: (TimeOfDay', TimeOfDay') } deriving Show
 data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
 data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
 data TestContent_cfg = TestContent_cfg { content :: [(String, String)] } | TestContent_None deriving Show
@@ -280,9 +282,9 @@ notifyTimeGet :: Configs -> Maybe NotifyTime_cfg
 notifyTimeGet opts = configRetrive opts "NotifyTime"
   (\(Configs_L cfg) ->
      let p = configPair (head cfg)
-         h = read . configVal . fst $ p :: Int
-         m = read . configVal . snd $ p :: Int
-     in NotifyTime_cfg h m)
+         begin = configVal . fst $ p
+         end   = configVal . snd $ p
+     in NotifyTime_cfg (strToLocalTime begin, strToLocalTime end))
 
 -- Test cases
 parserTest :: Test
