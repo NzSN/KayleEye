@@ -17,6 +17,7 @@ import Data.Either
 import Debug.Trace (trace)
 import System.IO
 
+import KayleConst
 import Time
 
 data Configs = Configs_M { configMap :: Map String Configs }
@@ -286,6 +287,16 @@ notifyTimeGet opts = configRetrive opts "NotifyTime"
          end   = configVal . snd $ p
      in NotifyTime_cfg (strToLocalTime begin, strToLocalTime end))
 
+configGet :: Configs -> (Configs -> Maybe a) -> String -> a
+configGet cfgs f errMsg = case f cfgs of
+                     Nothing  -> error errMsg
+                     Just opt -> opt
+cGetServer :: Configs -> ServerInfo_cfg
+cGetServer c = configGet c serverInfoGet serverAddr_err_msg
+
+cGetCmds :: Configs -> TestContent_cfg
+cGetCmds c = configGet c testCmdGet test_cmd_err_msg
+
 -- Test cases
 parserTest :: Test
 parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
@@ -296,7 +307,6 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       contents <- hGetContents file
 
       let config = fromRight Configs_Empty $ parseConfig contents
-      print config
 
       -- Admin Email
       let aEmail = fromJust $ adminEmailGet config
@@ -330,5 +340,5 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       assertEqual "Token" "12345678" (priToken pToken)
 
       let cmd = fromJust $ testCmdGet config
-      print cmd
+      return ()
       -- assertEqual "TestCmd" ["@RebuildAll", ".\\GBN\\src\\clear_gpon.bat"] (content cmd)

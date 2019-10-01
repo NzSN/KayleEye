@@ -10,6 +10,9 @@ k_error = 1
 
 boxKeyRetryInterval = 10 * second_micro_int
 
+minute_micro :: Int
+minute_micro = 60 * 1000000
+
 second_micro_int :: Int
 second_micro_int = 1000000
 

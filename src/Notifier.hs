@@ -12,6 +12,8 @@ import Homer
 import NotifyHandler
 import KayleDefined
 import Modules.ConfigReader
+import KayleConst
+import Time
 
 import Data.Maybe
 import Control.Concurrent
@@ -47,7 +49,23 @@ procUnit = 5
 -- Init function of Notifier module this function may
 -- possible be called in forkIO.
 notifierSpawn :: MessageFormat a => Notifier a -> IO ()
-notifierSpawn n = notifyTo n
+notifierSpawn n =
+  let cfgs = configs n
+      interval = configGet cfgs notifyTimeGet "Notify time is not configured"
+
+      beginTime = fst $ notifyTime interval
+      endTime = snd $ notifyTime interval
+
+  in notifyloop beginTime endTime
+
+  where notifyloop bTime eTime = do
+          now <- getTimeNow
+
+          if isTimeInInterval now bTime eTime
+          then notifyTo n
+          else threadDelay $ (eTime Time.- now) * minute_micro
+
+          notifyloop bTime eTime
 
 notify :: Notifier a -> NotifyUnit a -> IO ()
 notify (Notifier chan cfgs) nu = writeChan chan nu
