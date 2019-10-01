@@ -103,13 +103,9 @@ doKayle =
       let homer = envHomer env
           bKey = envKey env
 
-      logKayle "Info" "Ready to process requests"
-
       letter <- if isEmptyLetter l
                 then liftIO . waitHomer $ homer
                 else return l
-
-      logKayle "Info" $ "Received Letter : " ++ (show letter)
 
       -- fixme: should provide function to deal with different error type
       eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
@@ -130,6 +126,9 @@ doKayle =
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
     procLetter letter bKey env = do
+        -- Logging the received letter
+        logKayle "Info" $ "Received Letter : " ++ (show letter)
+
         exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
         if not exists
             then (liftIO . isLetterExists bKey procTbl $ (ident letter))
