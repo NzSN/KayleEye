@@ -1,4 +1,4 @@
-{--# Overloadedstrings  #--}
+{-# LANGUAGE OverloadedStrings  #-}
 
 module Actions where
 

@@ -5,6 +5,8 @@
 
 module Homer where
 
+import KayleConst
+
 -- Json
 import Data.Aeson
 import Data.Map as Map
@@ -21,10 +23,12 @@ import Control.Concurrent.Thread.Delay
 -- Socket
 import Network.Socket
 import System.IO
-import Data.ByteString.Lazy
+import Data.ByteString.Lazy hiding (putStrLn)
 import Data.ByteString.Lazy.Internal as BI
 import Data.Text as Text
 import Network.Socket.ByteString as BS
+
+import Data.String.Conversions (cs)
 
 -- Identity Processing functions
 type IdentStr = String
@@ -49,7 +53,7 @@ identSplit all@(x:xs)
   where shaPart = identSplit xs
 
 -- Homer
-data Homer = Homer { rSocket :: Socket, rAddr :: SockAddr }
+data Homer = Homer { handle :: Handle }
 
 -- Letter
 data Letter = Letter { ident :: IdentStr,
@@ -116,15 +120,16 @@ isTestSuccess l = let content_of_l = content l
                      [ (fromJust $ Map.lookup k content_of_l) == "T" | k <- allKeysOfContent l]
 
 pickHomer :: String -- HostName
-        -> String -- Port
-        -> IO Homer
+          -> String -- Port
+          -> IO Homer
 pickHomer host port = do
     addrInfos <- getAddrInfo Nothing (Just host) (Just port)
 
     let serverAddr = Prelude.head addrInfos
     sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
 
-    return $ Homer sock (addrAddress serverAddr)
+    handle <- socketToHandle sock ReadWriteMode
+    return $ Homer handle
 
 pickHomer' :: String -> String -> IO Homer
 pickHomer' host port = do
@@ -134,29 +139,37 @@ pickHomer' host port = do
     sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
     bind sock (addrAddress serverAddr)
 
-    return $ Homer sock (addrAddress serverAddr)
-
+    handle <- socketToHandle sock ReadWriteMode
+    return $ Homer handle
 
 letterBuild :: Letter -> ByteString
 letterBuild l = encode $ Letter (ident l) (header l) (content l)
 
-homerFlyWith :: Homer -> Letter -> IO Int
-homerFlyWith homer letter = do
-  let letterStr = toStrict $ letterBuild letter
-  BS.sendTo (rSocket homer) letterStr (rAddr homer)
+sendLetter :: Homer -> Letter -> IO Integer
+sendLetter h l = do
+  let handle_ = handle h
+      letterStr = cs $ letterBuild l
+  hPutStrLn handle_ letterStr
+  return k_ok
 
-waitHomer :: Homer -> IO Letter
-waitHomer homer = do
-  (rawLetter_, addr) <- BS.recvFrom (rSocket homer) 1024
+waitLetter :: Homer -> IO Letter
+waitLetter h = do
+  let handle_ = handle h
 
-  let letter = (decode $ fromStrict rawLetter_ :: Maybe Letter)
+  letterStr <- hGetLine handle_
+  let letterMaybe = decode (cs letterStr)
+  if isNothing letterMaybe
+    then return Empty_letter
+    else return $ fromJust letterMaybe
 
-  if isNothing letter
-    then return $ emptyLetter
-    else return $ fromJust letter
+waitHomer :: Socket -> IO Homer
+waitHomer socket = do
+  (connsock, _) <- accept socket
+  handle <- socketToHandle connsock ReadWriteMode
+  hSetBuffering handle LineBuffering
+  return $ Homer handle
 
 -- Test cases
-
 homerTest :: Test
 homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
                       TestLabel "Letter update" (TestCase homerAssert1),
@@ -168,12 +181,12 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
 
           m <- newEmptyMVar
           -- Server
-          forkIO $ waitHomer homer_recv
-            >>= (\x -> check x m)
-            >> return ()
+          -- forkIO $ waitHomer homer_recv
+          --   >>= (\x -> check x m)
+          --  >> return ()
 
           -- Client
-          forkIO $ delay 1000000 >> homerFlyWith homer_send l >> return ()
+          -- forkIO $ delay 1000000 >> homerFlyWith homer_send l >> return ()
 
           r <- takeMVar m
           assertEqual "HomerTest" 't' r
