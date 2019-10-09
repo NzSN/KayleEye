@@ -44,6 +44,7 @@ import Data.Aeson
 import Database.HDBC
 
 -- Homer
+import Letter as L
 import Homer as H
 import LetterBox
 import KayleConst
@@ -52,6 +53,7 @@ import KayleBasics as K
 import RepoOps as R
 import Actions
 import KayleDefined
+import Room
 
 import Control.Concurrent
 
@@ -72,7 +74,7 @@ main = do
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
   print configs
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
-  homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
+  homer <- pickHomer (C.addr serverOpts) (C.port serverOpts)
 
   -- Box initialization
   let dbOpts = configGet configs databaseGet db_err_msg
@@ -81,7 +83,9 @@ main = do
   -- Database init, Create procTbl and historyTbl if not exists
   boxInit bKey
 
-  let env = (KayleEnv configs manager args homer bKey)
+  room <- newRoom
+
+  let env = (KayleEnv configs manager args homer bKey room)
   runKayle doKayle env
 
 -- Append log message to Kayle
@@ -96,17 +100,17 @@ waitKey_until c =
 doKayle :: Kayle
 doKayle =
   ask >>= \l -> procLoop Empty_letter l
-
   where
     procLoop :: Letter -> KayleEnv -> Kayle
     procLoop l env = do
       let homer = envHomer env
           bKey = envKey env
+          room = envRoom env
 
       logKayle "Info" "Ready to process requests"
 
       letter <- if isEmptyLetter l
-                then liftIO . waitHomer $ homer
+                then liftIO . getLetter $ room
                 else return l
 
       logKayle "Info" $ "Received Letter : " ++ (show letter)
@@ -119,7 +123,10 @@ doKayle =
         0 -> procLoop Empty_letter env
         -- ERROR, just retry the letter with new box key.
         1 -> (liftIO . waitKey_until $ (envCfg env))
-          >>= \x -> let env_new = KayleEnv (envCfg env) (envMng env) (envArgs env) (envHomer env) x
+          >>= \x -> let env_new = KayleEnv
+                                  (envCfg env) (envMng env)
+                                  (envArgs env) (envHomer env) x
+                                  (envRoom env)
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
@@ -183,12 +190,12 @@ doKayle =
                 -> Letter -- The letter from box
                 -> KayleEnv -> Kayle
     inProcDo rl bl env =
-        let content = H.content rl
+        let content = L.content rl
             -- Update the letter from box
         in (return $ letterUpdate' bl [(k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
             -- Put the letter from box back to box
             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
-                    (liftIO . updateLetter (envKey env) (H.ident x) (encode $ H.content x) $ isTestFinished x))
+                    (liftIO . updateLetter (envKey env) (L.ident x) (encode $ L.content x) $ isTestFinished x))
             -- To check that whether the test describe by the letter is done
             >>= (\x -> if x == 1
                          then if isTestSuccess rl

@@ -4,6 +4,7 @@ module Actions where
 
 import KayleDefined
 import LetterBox
+import Letter
 import Homer
 import KayleBasics
 import KayleConst

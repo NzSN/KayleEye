@@ -13,7 +13,7 @@ import Database.HDBC.MySQL
 import Data.Maybe
 import Data.ByteString.Lazy.Internal
 
-import Homer
+import Letter
 
 -- Unit Testing
 import Test.HUnit

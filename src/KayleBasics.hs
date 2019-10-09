@@ -28,6 +28,7 @@ import System.Process as Process
 
 import Control.Concurrent.Thread.Delay
 
+import Letter as L
 import Homer as H
 import Data.Map as Map
 
@@ -46,13 +47,13 @@ letterInit cfgs l = do
     then Nothing
     else let workContent = fromJust workContent_m
          in return $ Letter (ident l) (header l) $ fromList
-            [ letterContentItem x (H.content l) |  x <- workContent ]
+            [ letterContentItem x (L.content l) |  x <- workContent ]
   where
     -- Contents of all testing projects
     tProjs = configGet cfgs (testPiecesGet (ident l)) test_proj_err_msg
     tContents = testContent tProjs
     -- All keys of content of letter
-    allKeys = keys $ H.content l
+    allKeys = keys $ L.content l
     -- Item generator for content of new letter
     letterContentItem key content =
         if elem key allKeys

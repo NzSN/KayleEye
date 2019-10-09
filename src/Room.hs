@@ -13,6 +13,12 @@ data Room = Room { inEntry :: Chan Letter, outEntry :: Chan Letter } | Empty_Roo
 
 maxNumOfLetters = 100
 
+newRoom :: IO Room
+newRoom = do
+  in_ <- newChan
+  out_ <- newChan
+  return $ Room in_ out_
+
 isRoomEmpty :: Room -> IO Bool
 isRoomEmpty r = return True
 

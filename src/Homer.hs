@@ -77,12 +77,8 @@ waitHomer socket room = do
   handle <- socketToHandle connsock ReadWriteMode
   hSetBuffering handle LineBuffering
 
-  return $ prepareH $ Homer handle room
+  return $ Homer handle room Empty_letter
 
-
--- Protocol
-prepareH :: Homer -> Homer
-prepareH h = h
 
 -- Test cases
 homerTest :: Test
