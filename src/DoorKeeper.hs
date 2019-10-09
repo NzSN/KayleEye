@@ -25,8 +25,16 @@ doorKeeper env = do
   forever $ doorProc masterSock
 
   where
-    doorProc sock = waitHomer sock
+    doorProc sock =
+      waitHomer sock
       >>= \h -> forkIO $ doorKeeperWork h env
+
+doorKeeperWork :: Homer -> KayleEnv -> IO ()
+doorKeeperWork h env = do
+  -- Prepare stage: Is letter already been processed ? need sync ?
+  preparePhase h env
+  -- Test result collected
+  collectPhase h env
 
 doorKeeper' :: Homer -> KayleArgs -> IO ()
 doorKeeper' h args = do
@@ -36,13 +44,6 @@ doorKeeper' h args = do
   if event_ == "daily"
     then sendLetter h (Letter i header Map.empty) >> return ()
     else return ()
-
-doorKeeperWork :: Homer -> KayleEnv -> IO ()
-doorKeeperWork h env = do
-  -- Prepare stage: Is letter already been processed ? need sync ?
-  preparePhase h env
-  -- Test result collected
-  collectPhase h env
 
 preparePhase :: Homer -> KayleEnv -> IO ()
 preparePhase h env = do
@@ -60,17 +61,22 @@ preparePhase h env = do
     else (preFunc $ fromJust event_) l_ask h env
 
 mergePrepare :: Letter -> Homer -> KayleEnv -> IO ()
-mergePrepare l h env = return ()
+mergePrepare l h env =
+  (sendLetter h $ ackLetter $ ident l) >> return ()
 
 pushPrepare :: Letter -> Homer -> KayleEnv -> IO ()
-pushPrepare l h env = return ()
+pushPrepare l h env =
+  sendLetter h (ackLetter $ ident l) >> return ()
 
 -- Sync: All test of a daily test should carry on the same revision
 dailyPrepare :: Letter -> Homer -> KayleEnv -> IO ()
 dailyPrepare l h env =
   let header = fromList [("event", control_event)]
       content = fromList [("cmd", cmd_noMerged)]
+      room = envRoom env
   in putLetter (envRoom env) (Letter (ident l) header content )
+     >> getLetter room
+     >> sendLetter h (ackLetter $ ident l) >> return ()
 
 collectPhase :: Homer -> KayleEnv -> IO ()
 collectPhase h env = do

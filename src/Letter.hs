@@ -36,6 +36,9 @@ data Letter = Letter { ident :: IdentStr,
                        header :: Map String String,
                        content :: Map String String } | Empty_letter deriving Show
 
+ackLetter :: IdentStr -> Letter
+ackLetter ident = Letter ident (fromList [("event", "ack")]) Map.empty
+
 instance ToJSON Letter where
   toJSON (Letter ident header content) =
     object ["ident" .= ident,

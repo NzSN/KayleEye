@@ -5,14 +5,19 @@ import Network.HTTP.Client
 import Homer
 import LetterBox
 import Room
+import Data.Map
 
 type Args = [String]
+
+type DailyMap = Map String String
+
 data KayleEnv = KayleEnv { envCfg :: Configs,
                            envMng :: Manager,
                            envArgs :: Args,
                            envHomer :: Homer,
                            envKey :: BoxKey,
-                           envRoom :: Room }
+                           envRoom :: Room,
+                           envDaily :: DailyMap}
 
 data KayleArgs = KayleArgs {
   proj :: String,

@@ -85,7 +85,7 @@ main = do
 
   room <- newRoom
 
-  let env = (KayleEnv configs manager args homer bKey room)
+  let env = (KayleEnv configs manager args homer bKey room Map.empty)
   runKayle doKayle env
 
 -- Append log message to Kayle
@@ -112,22 +112,22 @@ doKayle =
                 else return l
 
       -- Deal with control letter
-      if typeOfLetter letter == control_event
-        then liftIO . controlProc letter $ env
-        else return ()
+      env_ <- if typeOfLetter letter == control_event
+              then liftIO . controlProc letter $ env
+              else return env
 
       -- fixme: should provide function to deal with different error type
-      eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
+      eType <- liftIO . catchSql (procLetter' letter bKey env_) $ procHandler
 
       case eType of
         -- OK
-        0 -> procLoop Empty_letter env
+        0 -> procLoop Empty_letter env_
         -- ERROR, just retry the letter with new box key.
-        1 -> (liftIO . waitKey_until $ (envCfg env))
+        1 -> (liftIO . waitKey_until $ (envCfg env_))
           >>= \x -> let env_new = KayleEnv
-                                  (envCfg env) (envMng env)
-                                  (envArgs env) (envHomer env) x
-                                  (envRoom env)
+                                  (envCfg env_) (envMng env_)
+                                  (envArgs env_) (envHomer env_) x
+                                  (envRoom env_) (envDaily env_)
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
@@ -206,8 +206,8 @@ doKayle =
                          else return k_ok)
 
 
-controlProc :: Letter -> KayleEnv -> IO ()
-controlProc l env = return ()
+controlProc :: Letter -> KayleEnv -> IO KayleEnv
+controlProc l env = return env
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle

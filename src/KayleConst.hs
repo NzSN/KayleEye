@@ -21,6 +21,7 @@ push_event = "push"
 daily_event = "daily"
 control_event = "control"
 disconn_event = "disconn"
+ack_event = "ack"
 
 cmd_noMerged = "noMerged"
 
