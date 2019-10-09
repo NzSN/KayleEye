@@ -49,7 +49,7 @@ accept mng cfgs iid = do
     405 -> notify (cs $ "Merge request " ++ iid ++ " is unable to be accepted") "failed" cfgs
     -- If it has some conflicts and can not be merged - you’ll get a 406 and
     -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs iid >> delay (3 * seconds_micro) >> print "fixme"
+    406 -> rebase mng cfgs iid >> delay (3 * seconds_micro) >> accept mng cfgs iid
     -- If the sha parameter is passed and does not match the HEAD of the source -
     -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
     409 -> notify (cs $ "Merge request " ++ iid ++ ": SHA does not match HEAD of source branch")
@@ -60,6 +60,8 @@ accept mng cfgs iid = do
     404 -> notify (cs "Merge requests not found or the url is wrong") "failed" cfgs
     -- Success
     200 -> return ()
+    -- Unknown
+    _   -> notify (cs "Failed to rebase with unknowed reason") "failed" cfgs
 
 -- Rebase merge request to target branch
 rebase :: Manager -> Configs
@@ -68,7 +70,7 @@ rebase :: Manager -> Configs
 rebase mng cfgs iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
-      rebaseUrl_ = replaceAll acceptUrl [projId, iid, token]
+      rebaseUrl_ = replaceAll rebaseUrl [projId, iid, token]
   code <- put_req rebaseUrl_ mng
 
   case code of
@@ -80,6 +82,8 @@ rebase mng cfgs iid = do
     404 -> notify (cs $ "Merge requests(" ++ iid ++ ") not found or the url is wrong") "failed" cfgs
     -- Success
     202 -> return ()
+    -- Unknown
+    _   -> notify (cs "Failed to rebase with unknowed reason") "failed" cfgs
 
 -- Commit Message
 commitMsg :: Manager -> Configs -> String -> IO String
