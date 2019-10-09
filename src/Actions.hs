@@ -80,9 +80,10 @@ push_action success l env =
 
 merge_action :: Action
 merge_action success l env =
-  (accept (envMng env) (envCfg env) $ (iid l))
-  >> send_test_content env l
-  >> return k_ok
+  let accept' = if success
+                then accept (envMng env) (envCfg env) $ (iid l)
+                else return ()
+  in accept' >> send_test_content env l >> return k_ok
 
 -- Action selector during the letter already in history table.
 actionSelector' :: String -> Action
