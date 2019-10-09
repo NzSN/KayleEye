@@ -2,14 +2,14 @@
 
 module Room where
 
-import Homer
+import Letter
 import Control.Concurrent
 
 type NumOfLetters = Int
 -- fixme: if there is many many letters in a Room
 --        in real sence then Room should be implement
 --        the queue via MVar but not a list.
-data Room = Room { inEntry :: Chan Letter, outEntry :: Chan Letter }
+data Room = Room { inEntry :: Chan Letter, outEntry :: Chan Letter } | Empty_Room
 
 maxNumOfLetters = 100
 
