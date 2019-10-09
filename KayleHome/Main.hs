@@ -107,13 +107,14 @@ doKayle =
           bKey = envKey env
           room = envRoom env
 
-      logKayle "Info" "Ready to process requests"
-
       letter <- if isEmptyLetter l
                 then liftIO . getLetter $ room
                 else return l
 
-      logKayle "Info" $ "Received Letter : " ++ (show letter)
+      -- Deal with control letter
+      if typeOfLetter letter == control_event
+        then liftIO . controlProc letter $ env
+        else return ()
 
       -- fixme: should provide function to deal with different error type
       eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
@@ -137,13 +138,14 @@ doKayle =
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
     procLetter letter bKey env = do
-        exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
-        if not exists
-            then (liftIO . isLetterExists bKey procTbl $ (ident letter))
-                 >>= \exists -> if not exists
-                                then newLetter letter env
-                                else inProcLetter letter env
-            else action' True letter $ env
+      logKayle "Info" $ "Received Letter : " ++ (show letter)
+      exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
+      if not exists
+        then (liftIO . isLetterExists bKey procTbl $ (ident letter))
+             >>= \exists -> if not exists
+                            then newLetter letter env
+                            else inProcLetter letter env
+        else action' True letter $ env
 
     -- Function to deal with the first arrived letter of a project
     newLetter :: Letter -> KayleEnv -> Kayle
@@ -202,6 +204,10 @@ doKayle =
                            then logKayle "Info" "Accpet Letter" >> action True rl env
                            else action False rl env
                          else return k_ok)
+
+
+controlProc :: Letter -> KayleEnv -> IO ()
+controlProc l env = return ()
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle

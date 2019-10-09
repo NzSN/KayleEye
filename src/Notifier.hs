@@ -74,8 +74,7 @@ notify (Notifier chan cfgs) nu = writeChan chan nu
 -- put left notifies back to Notifier then deal l-
 -- etters be taken.
 notifyTo :: MessageFormat a => Notifier a -> IO ()
-notifyTo n = (readChan $ queue n)
-  >>= \x -> (handlerSelect n) x $ configs n
+notifyTo n = (readChan $ queue n) >>= \x -> (handlerSelect n) x $ configs n
 
 -- Temporarily only support email.
 handlerSelect :: MessageFormat a => Notifier a -> MessageHandler a

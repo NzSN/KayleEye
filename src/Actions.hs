@@ -2,7 +2,7 @@
 
 module Actions where
 
-import KayleDefined
+import KayleDefined as K
 import LetterBox
 import Letter
 import Homer
@@ -81,7 +81,7 @@ push_action success l env =
 
 merge_action :: Action
 merge_action success l env =
-  (accept (envMng env) (envCfg env) $ (iid l))
+  (accept (envMng env) (envCfg env) $ (Actions.iid l))
   >> send_test_content env l
   >> return k_ok
 

@@ -22,20 +22,13 @@ import Control.Monad.Reader
 import qualified KayleConst as KConst
 import KayleBasics hiding (notify)
 
+import Letter
 import Homer
+import DoorKeeper
+import KayleDefined
 
 type Revision = String
 type JudgeContent = String
-
-data KayleArgs = KayleArgs {
-  proj :: String,
-  target :: String,
-  sha :: String,
-  iid :: String,
-  configPath :: String,
-  cmds :: String,
-  -- Event's value is "push" or "merge_request"
-  event :: String } deriving Show
 
 getKayleArgs :: IO KayleArgs
 getKayleArgs = do
@@ -74,7 +67,8 @@ doJudge' args configs =
                             then judge testCmds "@failed" True
                             else return True)
                   >>= \x -> (notify h args x) >> throwError x
-  in pickHomer (addr serverOpts) (port serverOpts) >>= testing
+  in pickHomer (addr serverOpts) (port serverOpts)
+     >>= \h -> doorKeeper' h args >> testing h
 
   where
     -- Throw if judge failed
@@ -86,10 +80,10 @@ notify h args False = notify' h args (fromList [(target args, "F")])
 notify h args True = notify' h args (fromList [(target args, "T")])
 
 notify' :: Homer -> KayleArgs -> Map String String -> IO ()
-notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args)
+notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args) (event args)
                            h = fromList [("event", event args), ("iid", iid args)]
                            l = Letter i h c
-                       in homerFlyWith homer l >> return ()
+                       in sendLetter homer l >> return ()
 
 judge :: TestContent_cfg
       -> String -- Build commands

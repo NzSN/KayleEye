@@ -34,7 +34,7 @@ import Data.String.Conversions (cs)
 
 
 -- Homer
-data Homer = Homer { handle :: Handle, room :: Room, letter :: Letter } | Empty_Homer
+data Homer = Homer { handle :: Handle } | Empty_Homer
 
 pickHomer :: String -- HostName
           -> String -- Port
@@ -49,7 +49,10 @@ pickHomer host port = do
     connect sock (addrAddress serverAddr)
 
     handle <- socketToHandle sock ReadWriteMode
-    return $ Homer handle Empty_Room Empty_letter
+    return $ Homer handle
+
+releaseHomer :: Homer -> IO ()
+releaseHomer h = return ()
 
 letterBuild :: Letter -> ByteString
 letterBuild l = encode $ Letter (ident l) (header l) (content l)
@@ -71,14 +74,13 @@ waitLetter h = do
     then return Empty_letter
     else return $ fromJust letterMaybe
 
-waitHomer :: Socket -> Room -> IO Homer
-waitHomer socket room = do
+waitHomer :: Socket -> IO Homer
+waitHomer socket = do
   (connsock, _) <- accept socket
   handle <- socketToHandle connsock ReadWriteMode
   hSetBuffering handle LineBuffering
 
-  return $ Homer handle room Empty_letter
-
+  return $ Homer handle
 
 -- Test cases
 homerTest :: Test
@@ -102,10 +104,10 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
           r <- takeMVar m
           assertEqual "HomerTest" 't' r
 
-        l = Letter (ident2Str $ Identity "item1" "12345")
+        l = Letter (ident2Str $ Identity "item1" "12345" "merge")
             (fromList [("iid", "1")])
             (fromList [("T1", "T")])
-        l1 = Letter (ident2Str $ Identity "item1" "12345")
+        l1 = Letter (ident2Str $ Identity "item1" "12345" "merge")
              (fromList [("iid", "1")])
              (fromList [("T1", "T"), ("T2", "T")])
 

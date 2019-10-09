@@ -14,4 +14,14 @@ data KayleEnv = KayleEnv { envCfg :: Configs,
                            envKey :: BoxKey,
                            envRoom :: Room }
 
+data KayleArgs = KayleArgs {
+  proj :: String,
+  target :: String,
+  sha :: String,
+  iid :: String,
+  configPath :: String,
+  cmds :: String,
+  -- Event's value is "push" or "merge_request"
+  event :: String } deriving Show
+
 

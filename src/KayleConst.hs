@@ -18,6 +18,11 @@ second_micro_int = 1000000
 
 mr_event = "merge_request"
 push_event = "push"
+daily_event = "daily"
+control_event = "control"
+disconn_event = "disconn"
+
+cmd_noMerged = "noMerged"
 
 -- Unit is microseconds
 seconds_micro :: Integer

@@ -258,6 +258,6 @@ boxTest = TestList [TestLabel "Box Insert,Search,Delete: " (TestCase boxAssert),
 
           assertEqual "IsExists" True isExists
 
-        l = Letter (ident2Str $ Identity "item1" "12345")
+        l = Letter (ident2Str $ Identity "item1" "12345" "merge")
             (fromList [("iid", "1")])
             (fromList [("T1", "T")])
