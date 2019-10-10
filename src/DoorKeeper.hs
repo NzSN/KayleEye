@@ -74,7 +74,7 @@ dailyPrepare l h env =
   let header = fromList [("event", control_event)]
       content = fromList [("cmd", cmd_noMerged)]
       room = envRoom env
-  in putLetter (envRoom env) (Letter (ident l) header content )
+  in putLetter room (Letter (ident l) header content)
      >> getLetter room
      >> sendLetter h (ackLetter $ ident l) >> return ()
 

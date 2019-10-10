@@ -16,6 +16,7 @@ minute_micro = 60 * 1000000
 second_micro_int :: Int
 second_micro_int = 1000000
 
+-- Letter events
 mr_event = "merge_request"
 push_event = "push"
 daily_event = "daily"
@@ -23,7 +24,9 @@ control_event = "control"
 disconn_event = "disconn"
 ack_event = "ack"
 
+-- Letter control commands
 cmd_noMerged = "noMerged"
+cmd_terminated = "terminated"
 
 -- Unit is microseconds
 seconds_micro :: Integer

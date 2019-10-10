@@ -53,6 +53,7 @@ import KayleBasics as K
 import RepoOps as R
 import Actions
 import KayleDefined
+import Puller
 import Room
 
 import Control.Concurrent
@@ -84,8 +85,10 @@ main = do
   boxInit bKey
 
   room <- newRoom
+  -- This locker is shared between puller and KayleHome
+  locker <- newEmptyMVar
 
-  let env = (KayleEnv configs manager args homer bKey room Map.empty)
+  let env = (KayleEnv configs manager args homer bKey room locker Map.empty)
   runKayle doKayle env
 
 -- Append log message to Kayle
@@ -127,7 +130,8 @@ doKayle =
           >>= \x -> let env_new = KayleEnv
                                   (envCfg env_) (envMng env_)
                                   (envArgs env_) (envHomer env_) x
-                                  (envRoom env_) (envDaily env_)
+                                  (envRoom env_) (envPullerLocker env_)
+                                  (envControl env_)
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
@@ -205,9 +209,72 @@ doKayle =
                            else action False rl env
                          else return k_ok)
 
-
 controlProc :: Letter -> KayleEnv -> IO KayleEnv
-controlProc l env = return env
+controlProc l env =
+  let cmd = fromJust $ retriFromContent l "cmd"
+      proc = case cmd of
+               "noMerged" -> noMergedCmd
+               "terminated" -> terminatedCmd
+  in proc l env
+
+noMergedCmd :: Letter -> KayleEnv -> IO KayleEnv
+noMergedCmd l env = do
+  let cEnv = envControl env
+      subEnv_May = subCtrlEnv cEnv cmd_noMerged
+      proj = head $ identSplit (ident l)
+      locker = envPullerLocker env
+
+  -- The Command's subEnv must exists
+  cEnv_new <- fromJust $
+    (\subEnv ->
+        let item = ctrlItem subEnv proj
+        in if isNothing item
+           then let new_env = itemInsert cEnv cmd_noMerged proj ["locked"]
+                in putMVar locker () >> return new_env
+           else return cEnv)
+    <$> subEnv_May
+
+  return $ kayleEnvSetCEnv env cEnv_new
+
+terminatedCmd :: Letter -> KayleEnv -> IO KayleEnv
+terminatedCmd l env = do
+  let cEnv = envControl env
+      subEnv_May = subCtrlEnv cEnv cmd_terminated
+      proj = head $ identSplit (ident l)
+      subTest = fromJust $ retriFromContent l "target"
+      allSubTest = fromJust $ Map.lookup proj (testContent $ fromJust $ testPiecesGet proj (envCfg env))
+
+  -- The Command's subEnv must exists
+  cEnv_new <- fromJust $
+    (\subEnv ->
+       let item = ctrlItem subEnv proj
+       in if isNothing item
+          then let new_env = itemInsert cEnv cmd_terminated proj [subTest]
+               in if isAllTerminated [subTest] allSubTest
+                  then return $ clean cEnv proj
+                  else return cEnv
+          else let subTests = subTest:(fromJust item)
+                   new_env = itemInsert cEnv cmd_terminated proj subTests
+               in if isAllTerminated subTests allSubTest
+                  then return $ clean cEnv proj
+                  else return cEnv)
+    <$> subEnv_May
+
+  let termEnv = fromJust $ subCtrlEnv cEnv_new cmd_terminated
+      locker = envPullerLocker env
+
+  if Map.size termEnv > 0
+    then takeMVar locker
+    else return ()
+
+  return $ kayleEnvSetCEnv env cEnv_new
+
+  where
+    isAllTerminated :: [String] -> [String] -> Bool
+    isAllTerminated subT allT = List.foldl (\acc x -> acc && elem x subT) True allT
+
+    clean :: CtrlEnv -> String -> CtrlEnv
+    clean cEnv proj = itemDelete cEnv cmd_terminated (head $ identSplit (ident l))
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle
