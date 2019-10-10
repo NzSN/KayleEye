@@ -1,7 +1,7 @@
 -- Kayle, a program to do judgement of quality of code, accept or reject.
 -- Arguments : ProjectName, iid, SHA
 
-{-#LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 

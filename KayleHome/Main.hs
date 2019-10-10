@@ -263,7 +263,7 @@ terminatedCmd l env = do
   let termEnv = fromJust $ subCtrlEnv cEnv_new cmd_terminated
       locker = envPullerLocker env
 
-  if Map.size termEnv > 0
+  if Map.size termEnv == 0
     then takeMVar locker
     else return ()
 
