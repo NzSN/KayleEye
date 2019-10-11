@@ -1,5 +1,9 @@
 module KayleDefined where
 
+import Test.HUnit
+import Debug.Trace
+
+import System.Environment
 import Modules.ConfigReader
 import Network.HTTP.Client
 import Homer
@@ -24,18 +28,36 @@ subCtrlEnv env cmd = Map.lookup cmd env
 ctrlItem :: CtrlSubEnv -> ItemName -> Maybe CtrlItem
 ctrlItem env iname = Map.lookup iname env
 
+subEnvInsert :: CtrlEnv -> CmdName -> CtrlSubEnv -> CtrlEnv
+subEnvInsert env cName subEnv = insert cName subEnv env
+
+itemSearch :: CtrlEnv -> CmdName -> ItemName -> Maybe CtrlItem
+itemSearch env cName iName =
+  Map.lookup cName env >>= \subEnv -> Map.lookup iName subEnv
+
 itemInsert :: CtrlEnv -> CmdName -> ItemName -> CtrlItem -> CtrlEnv
 itemInsert env cName iName item =
+  update subEnvInsert cName env
+
+  where subEnvInsert :: CtrlSubEnv -> Maybe CtrlSubEnv
+        subEnvInsert subEnv = Just $ Map.insert iName item subEnv
+
+itemUpdate :: CtrlEnv -> CmdName -> ItemName -> CtrlItem -> CtrlEnv
+itemUpdate env cName iName item =
   update subEnvUpdate cName env
 
   where subEnvUpdate :: CtrlSubEnv -> Maybe CtrlSubEnv
-        subEnvUpdate subEnv = Just $ update (\item_old -> Just item) iName subEnv
+        subEnvUpdate subEnv = Just $ Map.update (\item_ -> Just item) iName subEnv
 
 itemDelete :: CtrlEnv -> CmdName -> ItemName -> CtrlEnv
 itemDelete env cName iName =
-  update subEnvUpdate cName env
+  update subEnvDelete cName env
 
-  where subEnvUpdate subEnv = Just $ delete iName subEnv
+  where subEnvDelete subEnv = Just $ delete iName subEnv
+
+itemDeleteAll :: CtrlEnv -> ItemName -> CtrlEnv
+itemDeleteAll env iName = mapWithKey itemDrop env
+  where itemDrop k a = Map.delete iName a
 
 
 data KayleEnv = KayleEnv { envCfg :: Configs,
@@ -68,6 +90,46 @@ data KayleArgs = KayleArgs {
   configPath :: String,
   cmds :: String,
   -- Event's value is "push" or "merge_request"
-  event :: String } deriving Show
+  event :: String} deriving Show
 
+getKayleArgs :: IO KayleArgs
+getKayleArgs = do
+  args <- getArgs
+  return $ KayleArgs
+    ((!!) args 0) -- proj
+    ((!!) args 1) -- target
+    ((!!) args 2) -- sha
+    ((!!) args 3) -- iid
+    ((!!) args 4) -- configPath
+    ((!!) args 5) -- build cmds
+    ((!!) args 6) -- isMr
 
+-- Test cases
+definedTest :: Test
+definedTest = TestList [TestLabel "Defined testing" (TestCase definedAssert)]
+  where definedAssert :: Assertion
+        definedAssert = do
+          let env = empty
+
+          let new_env = subEnvInsert env "1" empty
+          assertEqual "" True (member "1" new_env)
+
+          let new_env1 = itemInsert new_env "1" "GL8900" ["1", "2", "3"]
+          assertEqual "" (Just ["1", "2", "3"]) $ itemSearch new_env1 "1" "GL8900"
+
+          let new_env2 = itemUpdate new_env1 "1" "GL8900" ["2", "3", "4"]
+          assertEqual "" (Just ["2", "3", "4"]) $ itemSearch new_env2 "1" "GL8900"
+
+          let new_env3 = itemDelete new_env2 "1" "GL8900"
+          assertEqual "" (Nothing) $ itemSearch new_env3 "1" "GL8900"
+
+          let new_env4 = itemInsert new_env "1" "GL8900" ["1", "2", "3"]
+              new_env5 = subEnvInsert new_env4 "2" empty
+              new_env6 = itemInsert new_env5 "2" "GL8900" ["2", "3", "4"]
+              new_env7 = itemDeleteAll new_env6 "GL8900"
+          assertEqual "" (Just ["1", "2", "3"]) $ itemSearch new_env6 "1" "GL8900"
+          assertEqual "" (Just ["2", "3", "4"]) $ itemSearch new_env6 "2" "GL8900"
+          assertEqual "" (Nothing) $ itemSearch new_env7 "1" "GL8900"
+          assertEqual "" (Nothing) $ itemSearch new_env7 "2" "GL8900"
+
+          return ()

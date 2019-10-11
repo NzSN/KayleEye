@@ -127,11 +127,7 @@ doKayle =
         0 -> procLoop Empty_letter env_
         -- ERROR, just retry the letter with new box key.
         1 -> (liftIO . waitKey_until $ (envCfg env_))
-          >>= \x -> let env_new = KayleEnv
-                                  (envCfg env_) (envMng env_)
-                                  (envArgs env_) (envHomer env_) x
-                                  (envRoom env_) (envPullerLocker env_)
-                                  (envControl env_)
+          >>= \x -> let env_new = kayleEnvSetBKey env_ x
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
@@ -225,14 +221,13 @@ noMergedCmd l env = do
       locker = envPullerLocker env
 
   -- The Command's subEnv must exists
-  cEnv_new <- fromJust $
-    (\subEnv ->
-        let item = ctrlItem subEnv proj
-        in if isNothing item
-           then let new_env = itemInsert cEnv cmd_noMerged proj ["locked"]
-                in putMVar locker () >> return new_env
-           else return cEnv)
-    <$> subEnv_May
+  cEnv_new <- fromJust $ subEnv_May
+        >>= \subEnv ->
+              let item = ctrlItem subEnv proj
+              in if isNothing item
+                 then let new_env = itemInsert cEnv cmd_noMerged proj ["locked"]
+                      in return $ putMVar locker () >> return new_env
+                 else return $ return cEnv
 
   return $ kayleEnvSetCEnv env cEnv_new
 
@@ -245,22 +240,21 @@ terminatedCmd l env = do
       allSubTest = fromJust $ Map.lookup proj (testContent $ fromJust $ testPiecesGet proj (envCfg env))
 
   -- The Command's subEnv must exists
-  cEnv_new <- fromJust $
-    (\subEnv ->
-       let item = ctrlItem subEnv proj
-       in if isNothing item
-          then let new_env = itemInsert cEnv cmd_terminated proj [subTest]
-               in if isAllTerminated [subTest] allSubTest
-                  then return $ clean cEnv proj
-                  else return cEnv
-          else let subTests = subTest:(fromJust item)
-                   new_env = itemInsert cEnv cmd_terminated proj subTests
-               in if isAllTerminated subTests allSubTest
-                  then return $ clean cEnv proj
-                  else return cEnv)
-    <$> subEnv_May
+  let cEnv_new = fromJust $ subEnv_May
+        >>= \subEnv ->
+              let item = ctrlItem subEnv proj
+              in if isNothing item
+                 then let new_env = itemInsert cEnv cmd_terminated proj [subTest]
+                      in if isAllTerminated [subTest] allSubTest
+                         then return $ clean cEnv proj
+                         else return cEnv
+                 else let subTests = subTest:(fromJust item)
+                          new_env = itemInsert cEnv cmd_terminated proj subTests
+                      in if isAllTerminated subTests allSubTest
+                         then return $ clean cEnv proj
+                         else return cEnv
 
-  let termEnv = fromJust $ subCtrlEnv cEnv_new cmd_terminated
+  let termEnv = fromJust $ subCtrlEnv cEnv_new cmd_noMerged
       locker = envPullerLocker env
 
   if Map.size termEnv == 0
@@ -274,7 +268,7 @@ terminatedCmd l env = do
     isAllTerminated subT allT = List.foldl (\acc x -> acc && elem x subT) True allT
 
     clean :: CtrlEnv -> String -> CtrlEnv
-    clean cEnv proj = itemDelete cEnv cmd_terminated (head $ identSplit (ident l))
+    clean cEnv proj = itemDeleteAll cEnv proj
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle

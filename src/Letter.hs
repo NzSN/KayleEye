@@ -4,10 +4,13 @@
 
 module Letter where
 
+import KayleConst
+
 import Data.Maybe
 import Data.Aeson
 import Data.Map as Map
 import Data.Text.Internal
+import Data.ByteString.Lazy hiding (putStrLn)
 
 -- Identity Processing functions
 type IdentStr = String
@@ -36,8 +39,28 @@ data Letter = Letter { ident :: IdentStr,
                        header :: Map String String,
                        content :: Map String String } | Empty_letter deriving Show
 
-ackLetter :: IdentStr -> Letter
-ackLetter ident = Letter ident (fromList [("event", "ack")]) Map.empty
+-- Control Letter
+terminatedLetter :: String -- Ident
+                 -> String -- Name of sub test
+                 -> Letter
+terminatedLetter ident_ subTest =
+  Letter ident_ (fromList [("event", control_event)]) (fromList [("who", subTest)])
+
+reqLetter :: IdentStr -> Letter
+reqLetter ident = Letter ident (fromList [("event", "req")]) Map.empty
+
+ackLetter :: IdentStr
+          -> Int -- Seq id
+          -> Letter
+ackLetter ident i = Letter ident (fromList [("event", "ack")]) (fromList [("seq", (show i))])
+
+disconnLetter :: IdentStr
+              -> Int -- SeqId
+              -> Letter
+disconnLetter ident i = Letter ident (fromList [("event", "disconn"), ("seq", (show i))]) Map.empty
+
+letterBuild :: Letter -> ByteString
+letterBuild l = encode $ Letter (ident l) (header l) (content l)
 
 instance ToJSON Letter where
   toJSON (Letter ident header content) =

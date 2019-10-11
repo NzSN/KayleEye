@@ -11,6 +11,7 @@ import Debug.Trace
 import System.Environment
 import Data.Map
 import Data.Maybe
+import Data.Either
 import Data.List
 import Data.List.Split
 
@@ -30,18 +31,6 @@ import KayleDefined
 type Revision = String
 type JudgeContent = String
 
-getKayleArgs :: IO KayleArgs
-getKayleArgs = do
-  args <- getArgs
-  return $ KayleArgs
-    ((!!) args 0) -- proj
-    ((!!) args 1) -- target
-    ((!!) args 2) -- sha
-    ((!!) args 3) -- iid
-    ((!!) args 4) -- configPath
-    ((!!) args 5) -- build cmds
-    ((!!) args 6) -- isMr
-
 isMr' :: String -> Bool
 isMr' s = s == KConst.mr_event
 
@@ -55,41 +44,55 @@ main = let beginToJudge args =
   where cfileName p t = p ++ "_" ++ t
 
 doJudge' :: KayleArgs -> Configs -> IO ()
-doJudge' args configs =
+doJudge' args configs = do
   let serverOpts = cGetServer configs
       testCmds = cGetCmds configs
+      homer = pickHomer (addr serverOpts) (port serverOpts)
+
+      judgeProc = judge testCmds (cmds args) False
+      reJudge   = judge testCmds "@failed" True
+
       -- Testing
-      testing h = judge testCmds (cmds args) False
-                  -- If first test is failed then run the commands
-                  -- pair with @failed, this provide opportunity to
-                  -- do clean and try again.
-                  >>= (\x -> if x == False
-                            then judge testCmds "@failed" True
-                            else return True)
-                  >>= \x -> (notify h args x) >> throwError x
-  in pickHomer (addr serverOpts) (port serverOpts)
-     >>= \h -> doorKeeper' h args >> testing h
+      -- If first test is failed then run the commands
+      -- pair with @failed, this provide opportunity to
+      -- do clean and try again.
+      testing i = judgeProc >>=
+                  \judge' -> either (\_ -> reJudge) (\_ -> return $ Right True) judge'
+                  >>= \x -> return $ fromRight False x
+
+  -- Get homer
+  h <- homer
+  -- Get seqId in prepare phase
+  seqId <- preparePhase' h args
+  -- Do testing job
+  success <- testing seqId
+  -- Send testing result
+  notify seqId h args success
+  -- Terminated the testing
+  terminatePhase' "" seqId h args
+  -- Throw error if testing is failed
+  throwError success
 
   where
     -- Throw if judge failed
     throwError bool = if bool == False then error "Test failed" else return ()
 
 -- Accept if pass test otherwise throw an error
-notify :: Homer -> KayleArgs -> Bool -> IO ()
-notify h args False = notify' h args (fromList [(target args, "F")])
-notify h args True = notify' h args (fromList [(target args, "T")])
+notify :: Int -> Homer -> KayleArgs -> Bool -> IO ()
+notify i h args False = notify' i h args (fromList [(target args, "F")])
+notify i h args True = notify' i h args (fromList [(target args, "T")])
 
-notify' :: Homer -> KayleArgs -> Map String String -> IO ()
-notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args) (event args)
-                           h = fromList [("event", event args), ("iid", iid args)]
-                           l = Letter i h c
-                       in sendLetter homer l >> return ()
+notify' :: Int -> Homer -> KayleArgs -> Map String String -> IO ()
+notify' seq homer args c = let i = ident2Str $ Identity (proj args) (sha args) (event args)
+                               h = fromList [("event", event args), ("iid", iid args), ("seq", (show i))]
+                               l = Letter i h c
+                           in sendLetter homer l >> return ()
 
 judge :: TestContent_cfg
       -> String -- Build commands
       -> Bool   -- Is in exclusive mode
-      -> IO Bool
-judge TestContent_None bCmds isExclusive = return True
+      -> IO (Either Bool Bool)
+judge TestContent_None bCmds isExclusive = return $ Right True
 judge c bCmds isExclusive = do
   let cmds = C.content c
       controls = splitOn " " bCmds
@@ -106,8 +109,8 @@ judge c bCmds isExclusive = do
       if elem control_str controls
         then (run_command_1 cmd_str) >>= (\x -> doNextOr x cmds controls)
         else doNextOr True cmds controls
-    loop [] controls = return True
+    loop [] controls = return $ Right True
     doNextOr b c ctrl =
       if b == False
-      then return False
+      then return $ Left False
       else loop c ctrl

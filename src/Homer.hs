@@ -54,9 +54,6 @@ pickHomer host port = do
 releaseHomer :: Homer -> IO ()
 releaseHomer h = return ()
 
-letterBuild :: Letter -> ByteString
-letterBuild l = encode $ Letter (ident l) (header l) (content l)
-
 sendLetter :: Homer -> Letter -> IO Integer
 sendLetter h l = do
   let handle_ = handle h

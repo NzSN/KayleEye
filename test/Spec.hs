@@ -5,11 +5,12 @@ import Homer
 import Logger
 import Time
 import Modules.ConfigReader
+import KayleDefined
 
-tests = TestList [TestLabel "homerTest" homerTest,
-                  TestLabel "loggerTest" loggerTest,
+tests = TestList [TestLabel "loggerTest" loggerTest,
                   TestLabel "ParserTest" parserTest,
-                  TestLabel "TimeTest" timeTest]
+                  TestLabel "TimeTest" timeTest,
+                  TestLabel "DefinedTest" definedTest]
 
 main = do
   runTestTT tests
