@@ -7,8 +7,10 @@ import System.Environment
 import Modules.ConfigReader
 import Network.HTTP.Client
 import Homer
+import Notifier
 import LetterBox
 import Room
+import Puller
 import Data.Map as Map
 
 import Control.Concurrent
@@ -66,20 +68,21 @@ data KayleEnv = KayleEnv { envCfg :: Configs,
                            envHomer :: Homer,
                            envKey :: BoxKey,
                            envRoom :: Room,
-                           envPullerLocker :: MVar (),
-                           envControl :: CtrlEnv }
+                           envPuller :: Puller,
+                           envControl :: CtrlEnv,
+                           envNotifier :: Notifier (String, String) }
 
 kayleEnvSetBKey :: KayleEnv -> BoxKey -> KayleEnv
-kayleEnvSetBKey (KayleEnv cfg mng args homer key room locker cEnv) b =
-  KayleEnv cfg mng args homer b room locker cEnv
+kayleEnvSetBKey (KayleEnv cfg mng args homer key room puller cEnv notifier) b =
+  KayleEnv cfg mng args homer b room puller cEnv notifier
 
 kayleEnvSetHomer :: KayleEnv -> Homer -> KayleEnv
-kayleEnvSetHomer (KayleEnv cfg mng args homer key room locker cEnv) h =
-  KayleEnv cfg mng args h key room locker cEnv
+kayleEnvSetHomer (KayleEnv cfg mng args homer key room puller cEnv notifier) h =
+  KayleEnv cfg mng args h key room puller cEnv notifier
 
 kayleEnvSetCEnv :: KayleEnv -> CtrlEnv -> KayleEnv
-kayleEnvSetCEnv (KayleEnv cfg mng args homer key room locker cEnv) cEnv_ =
-  KayleEnv cfg mng args homer key room locker cEnv_
+kayleEnvSetCEnv (KayleEnv cfg mng args homer key room puller cEnv notifier) cEnv_ =
+  KayleEnv cfg mng args homer key room puller cEnv_ notifier
 
 
 data KayleArgs = KayleArgs {

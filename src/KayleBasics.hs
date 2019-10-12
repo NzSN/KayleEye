@@ -101,31 +101,6 @@ get_req url mng = do
   return $ (statusCode $ responseStatus response, (cs $ responseBody response))
 
 
--- Notify via email
--- fixme: pass user as argument of this function
-notify :: Lazy.Text -> String -> Configs -> IO ()
-notify content sub cfgs = do
-  let mailInfo = fromJust $ emailInfoGet $ cfgs
-      hostName = Config.host mailInfo
-      user = Config.user mailInfo
-      pass = Config.pass mailInfo
-
-      adminEmail = (cs $ adminEmailAddr addr) :: Internal.Text
-
-  let from = Address Nothing ((cs user) :: Internal.Text)
-      to   = [Address (Just "admin") adminEmail]
-      cc   = []
-      bcc  = []
-      subject = (cs sub)
-      body    = plainTextPart content
-
-  let mail = simpleMail from to cc bcc subject [body]
-  sendMailWithLogin hostName user pass mail
-
-  where addr = case adminEmailGet $ cfgs of
-          Nothing   -> error "Admin email address not found in configuration file"
-          Just addr -> addr
-
 -- Run shell command with args
 run_command :: String -> [String] -> IO Bool
 run_command cmd args = do

@@ -8,6 +8,7 @@ import Letter
 import Homer
 import KayleBasics
 import KayleConst
+import Notifier
 
 import Data.Maybe
 import Control.Monad.Trans.Maybe
@@ -55,7 +56,7 @@ iid l = let iidMaybe = retriFromHeader l "iid"
 send_test_content :: KayleEnv -> Letter -> IO ()
 send_test_content e l =
   (commitMessage e $ l)
-  >>= (\body -> notify (cs body) (subject l) $ (envCfg e))
+  >>= (\body -> notifyViaEmail (envNotifier e) (subject l) body)
 
 -- Action selector during the letter is new
 actionSelector :: String -> Action
@@ -69,10 +70,10 @@ daily_action :: Action
 daily_action success l env =
   (commitMessage env $ l)
   >>= (\x -> if success
-            then notify (cs x) (subject l) $ (envCfg env)
+            then notifyViaEmail (envNotifier env) (subject l) x
             else (yesterday'sMR (envMng env) $ (envCfg env))
-                 >>= \mrs_today ->
-                       notify (cs (x ++ mrs_today)) (subject l) $ (envCfg env))
+                 >>= (\mrs_today ->
+                       notifyViaEmail (envNotifier env) (subject l) (x ++ mrs_today)))
   >> return k_ok
 
 push_action :: Action
@@ -81,7 +82,7 @@ push_action success l env =
 
 merge_action :: Action
 merge_action success l env =
-  (accept (envMng env) (envCfg env) $ (Actions.iid l))
+  (accept (envMng env) (envCfg env) (envNotifier env) $ (Actions.iid l))
   >> send_test_content env l
   >> return k_ok
 

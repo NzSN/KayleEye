@@ -55,6 +55,7 @@ import Actions
 import KayleDefined
 import Puller
 import Room
+import Notifier
 
 import Control.Concurrent
 
@@ -84,11 +85,21 @@ main = do
   -- Database init, Create procTbl and historyTbl if not exists
   boxInit bKey
 
+  -- Build the room which supply a way to Kayle to communicate with doorkeeper
   room <- newRoom
-  -- This locker is shared between puller and KayleHome
-  locker <- newEmptyMVar
 
-  let env = (KayleEnv configs manager args homer bKey room locker Map.empty)
+  -- Create Notifier and Puller
+  notifier <- newNotifier configs
+  puller <- newPuller
+
+  -- This locker is shared between puller and KayleHome
+  let env = (KayleEnv configs manager args homer bKey room puller Map.empty notifier)
+
+  -- Spawn Puller thread
+  forkIO $ pullerSpawn puller manager configs notifier
+  -- Spawn Notifier thread
+  forkIO $ notifierSpawn notifier
+
   runKayle doKayle env
 
 -- Append log message to Kayle
@@ -217,8 +228,7 @@ noMergedCmd :: Letter -> KayleEnv -> IO KayleEnv
 noMergedCmd l env = do
   let cEnv = envControl env
       subEnv_May = subCtrlEnv cEnv cmd_noMerged
-      proj = head $ identSplit (ident l)
-      locker = envPullerLocker env
+      proj = ident l
 
   -- The Command's subEnv must exists
   cEnv_new <- fromJust $ subEnv_May
@@ -226,7 +236,7 @@ noMergedCmd l env = do
               let item = ctrlItem subEnv proj
               in if isNothing item
                  then let new_env = itemInsert cEnv cmd_noMerged proj ["locked"]
-                      in return $ putMVar locker () >> return new_env
+                      in return $ lock (envPuller env) >> return new_env
                  else return $ return cEnv
 
   return $ kayleEnvSetCEnv env cEnv_new
@@ -234,31 +244,16 @@ noMergedCmd l env = do
 terminatedCmd :: Letter -> KayleEnv -> IO KayleEnv
 terminatedCmd l env = do
   let cEnv = envControl env
-      subEnv_May = subCtrlEnv cEnv cmd_terminated
-      proj = head $ identSplit (ident l)
-      subTest = fromJust $ retriFromContent l "target"
-      allSubTest = fromJust $ Map.lookup proj (testContent $ fromJust $ testPiecesGet proj (envCfg env))
+      proj = ident l
 
-  -- The Command's subEnv must exists
-  let cEnv_new = fromJust $ subEnv_May
-        >>= \subEnv ->
-              let item = ctrlItem subEnv proj
-              in if isNothing item
-                 then let new_env = itemInsert cEnv cmd_terminated proj [subTest]
-                      in if isAllTerminated [subTest] allSubTest
-                         then return $ clean cEnv proj
-                         else return cEnv
-                 else let subTests = subTest:(fromJust item)
-                          new_env = itemInsert cEnv cmd_terminated proj subTests
-                      in if isAllTerminated subTests allSubTest
-                         then return $ clean cEnv proj
-                         else return cEnv
+      -- The Command's subEnv must exists
+      cEnv_new = clean cEnv proj
 
-  let termEnv = fromJust $ subCtrlEnv cEnv_new cmd_noMerged
-      locker = envPullerLocker env
+      -- Remove all content in noMerged env relate to the test
+      termEnv = fromJust $ subCtrlEnv cEnv_new cmd_noMerged
 
   if Map.size termEnv == 0
-    then takeMVar locker
+    then unlock (envPuller env)
     else return ()
 
   return $ kayleEnvSetCEnv env cEnv_new

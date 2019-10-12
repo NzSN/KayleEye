@@ -3,7 +3,9 @@
 module Puller where
 
 import RepoOps
-import KayleDefined
+import Time
+import Modules.ConfigReader
+import Notifier
 
 import Control.Monad
 import Control.Concurrent
@@ -27,16 +29,22 @@ lock p = putMVar (locker p) ()
 unlock :: Puller -> IO ()
 unlock p = takeMVar (locker p)
 
-pullerSpawn :: Puller -> KayleEnv -> IO ()
-pullerSpawn p env = forever $ do
+newPuller :: IO Puller
+newPuller = do
+  chan <- newChan
+  mvar <- newEmptyMVar
+  return $ Puller chan mvar
+
+pullRequest :: Puller -> String -> IO ()
+pullRequest p iid =
+  let rq = requests p
+  in writeChan rq iid
+
+pullerSpawn :: Puller -> Manager -> Configs -> Notifier (String, String) -> IO ()
+pullerSpawn p manager_ configs notifier = forever $ do
   let locker_ = locker p
       reqQ    = requests p
-      manager_ = envMng env
-      configs = envCfg env
-
-  lock p
 
   iid <- readChan reqQ
-  accept manager_ configs iid
 
-  unlock p
+  lock p >> accept manager_ configs notifier iid >> unlock p

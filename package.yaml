@@ -54,6 +54,7 @@ dependencies:
 - systemd
 - regex-tdfa
 - time
+- stm
 
 library:
   source-dirs: src

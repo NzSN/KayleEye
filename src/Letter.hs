@@ -52,12 +52,21 @@ reqLetter ident = Letter ident (fromList [("event", "req")]) Map.empty
 ackLetter :: IdentStr
           -> Int -- Seq id
           -> Letter
-ackLetter ident i = Letter ident (fromList [("event", "ack")]) (fromList [("seq", (show i))])
+ackLetter ident i = Letter ident
+                    (fromList [("event", "ack")])
+                    (fromList [("seq", (show i))])
+
+mergeBlockLetter :: IdentStr -> Letter
+mergeBlockLetter ident_ = Letter ident_
+                    (fromList [("event", control_event)])
+                    (fromList [("cmd", cmd_noMerged)])
 
 disconnLetter :: IdentStr
               -> Int -- SeqId
               -> Letter
 disconnLetter ident i = Letter ident (fromList [("event", "disconn"), ("seq", (show i))]) Map.empty
+
+
 
 letterBuild :: Letter -> ByteString
 letterBuild l = encode $ Letter (ident l) (header l) (content l)

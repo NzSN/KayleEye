@@ -8,11 +8,13 @@
 
 module Notifier where
 
+import Test.HUnit
+import Debug.Trace
+
 import Homer
-import NotifyHandler
-import KayleDefined
 import Modules.ConfigReader
 import KayleConst
+import KayleBasics
 import Time
 
 import Data.Maybe
@@ -35,8 +37,8 @@ instance MessageFormat String where
 instance (MessageFormat a, MessageFormat b) => MessageFormat (a, b) where
   present (a, b) = present a ++ present b
 
-newtype Message a = Message { msg :: a }
-data NotifyUnit a = NotifyUnit { event :: Int, message :: Message a }
+newtype Message a = Message { msg :: a } deriving Show
+data NotifyUnit a = NotifyUnit { event :: Int, message :: Message a } deriving Show
 data Notifier a = Notifier { queue :: Chan (NotifyUnit a), configs :: Configs }
 
 type MessageHandler a = NotifyUnit a -> Configs -> IO ()
@@ -45,6 +47,11 @@ type Mode = Int
 emailMode = 0
 
 procUnit = 5
+
+newNotifier :: MessageFormat a => Configs -> IO (Notifier a)
+newNotifier cfg = do
+  chan <- newChan
+  return $ Notifier chan cfg
 
 -- Init function of Notifier module this function may
 -- possible be called in forkIO.
@@ -66,6 +73,13 @@ notifierSpawn n =
           else threadDelay $ (eTime Time.- now) * minute_micro
 
           notifyloop bTime eTime
+
+notifyViaEmail :: Notifier (String, String)
+               -> String -- Subject
+               -> String -- Body
+               -> IO ()
+notifyViaEmail n sub body =
+  notify n $ NotifyUnit 0 $ Message (sub, body)
 
 notify :: Notifier a -> NotifyUnit a -> IO ()
 notify (Notifier chan cfgs) nu = writeChan chan nu
@@ -90,12 +104,13 @@ emailNotify :: MessageFormat a => NotifyUnit a -> Configs -> IO ()
 emailNotify nu cfgs = do
   let adminEmail = adminEmailGet cfgs
       extraEmails_ = extraEmailsGet cfgs
-  if isNothing adminEmail || isNothing extraEmails_
-    then return ()
-    else sendEmails (fromJust adminEmail) (fromJust extraEmails_)
+
+  maybe (return ()) (sendEmails . (\x -> [x]) . adminEmailAddr) adminEmail
+  maybe (return ()) (sendEmails . extraEmails) extraEmails_
+
   where
-    sendEmails adEmail extraEmail_ =
-      let sendTo = (adminEmailAddr adEmail) : (extraEmails extraEmail_)
+    sendEmails addrs =
+      let sendTo = addrs
           message_ = msg . message $ nu
           subject = head . present $ message_
           body = last . present $ message_
@@ -107,7 +122,7 @@ emailCreate :: String -- Subject
             -> String -- Body
             -> String -- Address
             -> Configs -> Mail
-emailCreate subject body_ addr cfgs =
+emailCreate subject_ body_ addr cfgs =
   let mailInfo = fromJust $ emailInfoGet $ cfgs
       user_ = user mailInfo
       address = cs addr :: Internal.Text
@@ -115,7 +130,7 @@ emailCreate subject body_ addr cfgs =
       to = [Address (Just "GPON") address]
       cc = []
       bcc = []
-      subject = subject
+      subject = cs subject_
       body = plainTextPart (cs body_ :: Lazy.Text)
   in simpleMail from to cc bcc subject [body]
 
@@ -127,3 +142,14 @@ emailSend e cfgs =
       user_ = user mailInfo
       pass_ = pass mailInfo
   in sendMailWithLogin hostName user_ pass_ e
+
+-- Test cases
+notifierTest :: Test
+notifierTest = TestList [TestLabel "Notifier Test" (TestCase notifierAssert)]
+  where notifierAssert :: Assertion
+        notifierAssert = do
+          cfgs <- loadConfig "GL8900" "./config"
+          notifier <- newNotifier cfgs
+
+          notifyViaEmail notifier "Test" "123"
+          notifyTo notifier

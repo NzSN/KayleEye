@@ -26,6 +26,8 @@ import Text.Regex.TDFA
 import Data.Time.Clock
 import Data.Time.Calendar
 
+import Notifier
+
 acceptUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
 rebaseUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/rebase?private_token=*"
 commitsUrl = "http://gpon.git.com:8011/api/v4/projects/*/repository/commits/*?private_token=*"
@@ -33,10 +35,10 @@ mergesUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests?private_t
 
 
 -- Accept an merge request into main branch
-accept :: Manager -> Configs
+accept :: Manager -> Configs -> Notifier (String, String)
        -> String -- iid, Merge request id
        -> IO ()
-accept mng cfgs iid = do
+accept mng cfgs notifier iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
       acceptUrl_ = replaceAll acceptUrl [projId, iid, token]
@@ -46,26 +48,26 @@ accept mng cfgs iid = do
     -- If merge request is unable to be accepted (ie: Work in Progress,
     -- Closed, Pipeline Pending Completion, or Failed while requiring Success) -
     -- you’ll get a 405 and the error message ‘Method Not Allowed’
-    405 -> notify (cs $ "Merge request " ++ iid ++ " is unable to be accepted") "failed" cfgs
+    405 -> notifyViaEmail notifier "failed" ("Merge request " ++ iid ++ " is unable to be accepted")
     -- If it has some conflicts and can not be merged - you’ll get a 406 and
     -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs iid >> delay (3 * seconds_micro) >> print "fixme"
+    406 -> rebase mng cfgs notifier iid >> delay (3 * seconds_micro) >> print "fixme"
     -- If the sha parameter is passed and does not match the HEAD of the source -
     -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
-    409 -> notify (cs $ "Merge request " ++ iid ++ ": SHA does not match HEAD of source branch")
-           "failed"  cfgs
+    409 -> notifyViaEmail notifier "failed"
+           ("Merge request " ++ iid ++ ": SHA does not match HEAD of source branch")
     -- If you don’t have permissions to accept this merge request - you’ll get a 401
-    401 -> notify (cs $ "Permissions denied") "failed" cfgs
+    401 -> notifyViaEmail notifier "failed" "Permissions denied"
     -- Merge request not found or the url is wrong
-    404 -> notify (cs "Merge requests not found or the url is wrong") "failed" cfgs
+    404 -> notifyViaEmail notifier "failed" "Merge requests not found or the url is wrong"
     -- Success
     200 -> return ()
 
 -- Rebase merge request to target branch
-rebase :: Manager -> Configs
+rebase :: Manager -> Configs -> Notifier (String, String)
        -> String -- iid, Merge request id
        -> IO ()
-rebase mng cfgs iid = do
+rebase mng cfgs notifier iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
       rebaseUrl_ = replaceAll acceptUrl [projId, iid, token]
@@ -74,10 +76,10 @@ rebase mng cfgs iid = do
   case code of
     -- If you don’t have permissions to push to the merge request’s source branch -
     -- you’ll get a 403 Forbidden response.
-    403 -> notify (cs "Permission denied to rebase merge request") "failed" cfgs
+    403 -> notifyViaEmail notifier "failed" "Permission denied to rebase merge request"
     -- The API will return a 202 Accepted response if the request is enqueued successfully
     -- Merge request not found or the url is wrong
-    404 -> notify (cs $ "Merge requests(" ++ iid ++ ") not found or the url is wrong") "failed" cfgs
+    404 -> notifyViaEmail notifier "failed" ("Merge requests(" ++ iid ++ ") not found or the url is wrong")
     -- Success
     202 -> return ()
 
