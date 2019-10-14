@@ -21,6 +21,7 @@ import GHC.Generics
 import Control.Concurrent
 import Test.HUnit
 import Control.Concurrent.Thread.Delay
+import qualified Control.Exception as Ex
 
 -- Socket
 import Network.Socket
@@ -78,6 +79,9 @@ waitHomer socket = do
   hSetBuffering handle LineBuffering
 
   return $ Homer handle
+
+withGuard :: Ex.Exception e => (e -> IO Letter) -> IO Letter -> IO Letter
+withGuard handler io_l = Ex.handle handler io_l
 
 -- Test cases
 homerTest :: Test

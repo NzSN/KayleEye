@@ -56,6 +56,7 @@ import KayleDefined
 import Puller
 import Room
 import Notifier
+import DoorKeeper
 
 import Control.Concurrent
 
@@ -74,7 +75,7 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
-  print configs
+
   let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
   homer <- pickHomer (C.addr serverOpts) (C.port serverOpts)
 
@@ -90,15 +91,17 @@ main = do
 
   -- Create Notifier and Puller
   notifier <- newNotifier configs
-  puller <- newPuller
+  puller <- newPuller manager configs notifier
 
   -- This locker is shared between puller and KayleHome
   let env = (KayleEnv configs manager args homer bKey room puller Map.empty notifier)
 
   -- Spawn Puller thread
-  forkIO $ pullerSpawn puller manager configs notifier
+  forkIO $ pullerSpawn puller
   -- Spawn Notifier thread
   forkIO $ notifierSpawn notifier
+  -- Spawn Doorkeeper thread
+  forkIO $ doorKeeper env
 
   runKayle doKayle env
 
@@ -218,28 +221,14 @@ doKayle =
 
 controlProc :: Letter -> KayleEnv -> IO KayleEnv
 controlProc l env =
-  let cmd = fromJust $ retriFromContent l "cmd"
-      proc = case cmd of
-               "noMerged" -> noMergedCmd
-               "terminated" -> terminatedCmd
-  in proc l env
+  let proc = retriFromContent l "cmd"
+             >>= \cmd -> case cmd of
+                           "req"        -> requestCmd
+                           "terminated" -> terminatedCmd
+  in maybe (return env) (\proc -> proc l env) proc
 
-noMergedCmd :: Letter -> KayleEnv -> IO KayleEnv
-noMergedCmd l env = do
-  let cEnv = envControl env
-      subEnv_May = subCtrlEnv cEnv cmd_noMerged
-      proj = ident l
-
-  -- The Command's subEnv must exists
-  cEnv_new <- fromJust $ subEnv_May
-        >>= \subEnv ->
-              let item = ctrlItem subEnv proj
-              in if isNothing item
-                 then let new_env = itemInsert cEnv cmd_noMerged proj ["locked"]
-                      in return $ lock (envPuller env) >> return new_env
-                 else return $ return cEnv
-
-  return $ kayleEnvSetCEnv env cEnv_new
+requestCmd :: Letter -> KayleEnv -> IO KayleEnv
+requestCmd l env =
 
 terminatedCmd :: Letter -> KayleEnv -> IO KayleEnv
 terminatedCmd l env = do

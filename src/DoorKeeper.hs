@@ -24,6 +24,8 @@ import Control.Exception as Excep
 
 import Debug.Trace
 
+data ProcInfo = ProcInfo { procId :: IdentStr, procSubTest :: String } deriving Show
+
 data MaintainElem = MaintainElem { testID :: String,
                                    status :: String,
                                    lastUpdated :: TimeOfDay' }
@@ -47,7 +49,7 @@ addMElem mTbl elem = do
 
   map_ <- readTVar mTbl_tvar
 
-  let key = identWithoutSeq (testID elem)
+  let key = (testID elem)
       newMap = bool
         (Map.insert key (fromJust $ addFunc []) map_)
         (Map.update addFunc key map_)
@@ -70,7 +72,7 @@ searchMElem mTbl tName = do
     >>= \elems ->
           Just $ foldl (\acc x -> bool acc x (testID x == tName)) Empty_Elem elems
 
-  where key = identWithoutSeq tName
+  where key = tName
 
 updateStatus :: MaintainTbl
              -> String -- Test name
@@ -81,7 +83,7 @@ updateStatus mTbl tName nStatus = do
 
   map_ <- readTVar mTbl_tvar
 
-  let key = identWithoutSeq tName
+  let key = tName
       newMap = Map.update (\elems -> Just $ map updateFunc elems) key map_
   writeTVar mTbl_tvar newMap
 
@@ -98,7 +100,7 @@ updateLast mTbl tName tod = do
 
   map_ <- readTVar mTbl_tvar
 
-  let key = identWithoutSeq tName
+  let key = tName
       newMap = Map.update (\elems -> Just $ map updateFunc elems) key map_
   writeTVar mTbl_tvar newMap
 
@@ -114,7 +116,7 @@ removeMElem mTbl tName = do
 
   map_ <- readTVar mTbl_tvar
 
-  let key = identWithoutSeq tName
+  let key = tName
       newMap = Map.update (\elems -> Just $ removeFunc elems) key map_
       elemsMayb = Map.lookup key newMap
       pMayb = elemsMayb >>= \elems -> if List.length elems == 0
@@ -137,96 +139,97 @@ doorKeeper env = do
   -- Master socket
   masterSock <- listenSockGet cfgs
   -- Dispatcher arrived requests
-  tbl <- atomically $ maintainTbl
-  dispatcher initSeq masterSock tbl
+  dispatcher masterSock
 
-  where dispatcher :: Int -> Socket -> MaintainTbl -> IO ()
-        dispatcher i s tbl =
+  where dispatcher :: Socket -> IO ()
+        dispatcher s =
           waitHomer s
-          >>= (\h -> forkIO $ job i h tbl)
-          >> dispatcher (seqInc i) s tbl
+          >>= (\h -> forkIO $ job h)
+          >> dispatcher s
 
-        seqInc i = (i + 1) `mod` 256
-
-        job i h tbl = Excep.handle handler_ (doorKeeperWork i h env tbl)
+        job h = Excep.handle handler_ (doorKeeperWork h env)
 
         handler_ :: SomeException -> IO ()
         handler_ e = return ()
 
-doorKeeperWork :: Int -> Homer -> KayleEnv -> MaintainTbl -> IO ()
-doorKeeperWork i h env tbl = do
+doorKeeperWork :: Homer -> KayleEnv -> IO ()
+doorKeeperWork h env = do
   -- Prepare stage: Is letter already been processed ? need sync ?
-  r <- preparePhase i h env tbl
+  r <- preparePhase h env
 
   maybe (return ()) nextPhase r
 
   where
     -- Test result collected
-    nextPhase _ = collectPhase h env tbl
+    nextPhase pInfo = collectPhase pInfo h env
     -- Disconn letter is arrived trun into terminated phase
-                >>= \l -> terminatedPhase l env tbl
+                >>= \l -> terminatedPhase l env
 
 -- Assign SeqId and actions depend on event type
-preparePhase :: Int -> Homer -> KayleEnv -> MaintainTbl -> IO (Maybe Int)
-preparePhase i h env tbl = do
+preparePhase :: Homer -> KayleEnv -> IO (Maybe ProcInfo)
+preparePhase h env = do
   -- Waiting for the first ask letter
-  l_ask <- waitLetter h
+  l_req <- waitLetter h
 
   -- Deal with request letter
-  let event_ = retriFromHeader l_ask "event"
-      preFunc e = case e of
-                  "merge_request" -> mergePrepare
-                  "push"          -> pushPrepare
-                  "daily"         -> dailyPrepare
+  let subTest = retriFromHeader l_req "who"
 
-  maybe (return Nothing) (\event -> preFunc event i l_ask h env tbl) event_
+  maybe (return Nothing) (\sub -> register l_req sub) subTest
 
-mergePrepare :: Int -> Letter -> Homer -> KayleEnv -> MaintainTbl -> IO (Maybe Int)
-mergePrepare i l h env tbl =
-  (sendLetter h $ ackLetter (ident l) i) >> (return $ Just 0)
+  where register req_l who =
+          let regLetter req sub = registerLetter (ident req) sub
+              ident_ = ident req_l
+          -- Register the subTest
+          in (putLetter (envRoom env) $ regLetter req_l who)
+             -- Waiting for registering
+             >> getLetter (envRoom env)
+             -- Giva an ack to Kayle
+             >>= \answer -> (if isAnswerOK answer
+                              -- If register success then add the connection to maintain table
+                            then (sendLetter h $ ackLetter ident_ True)
+                            else (sendLetter h $ ackLetter ident_ False))
+                            -- If the request is rejected by KayleHome then just return Nothing
+                            -- to exit from the thread.
+                            >> (bool (return Nothing) (return $ Just $ ProcInfo ident_ who)
+                                 $ isAnswerOK answer)
 
-pushPrepare :: Int -> Letter -> Homer -> KayleEnv -> MaintainTbl -> IO (Maybe Int)
-pushPrepare i l h env tbl =
-  sendLetter h (ackLetter (ident l) i) >> (return $ Just 0)
-
--- Sync: All test of a daily test should carry on the same revision
-dailyPrepare :: Int -> Letter -> Homer -> KayleEnv -> MaintainTbl -> IO (Maybe Int)
-dailyPrepare i l h env tbl =
-  let room = envRoom env
-      ident_ = ident l
-  in getTimeNow
-     -- Register into maintain table
-     >>= (\tod -> atomically $ addMElem tbl $ MaintainElem (identWithSeq ident_ (show i)) "Online" tod)
-     -- Blocking Puller
-     >> putLetter room (mergeBlockLetter ident_)
-     -- Wait KayleHome blocking Puller
-     >> getLetter room
-     -- Ack to the request from client
-     >> sendLetter h (ackLetter ident_ i) >> (return $ Just 0)
-
-collectPhase :: Homer -> KayleEnv -> MaintainTbl -> IO Letter
-collectPhase h env tbl = do
-  l <- waitLetter h
+collectPhase :: ProcInfo -> Homer -> KayleEnv -> IO Letter
+collectPhase pInfo h env = do
+  -- If connection is interrupted just unregister the sub test
+  l <- withGuard interruptedHandler $ waitLetter h
 
   if typeOfLetter l == disconn_event
     then releaseHomer h >> return l
     -- put push,merge,daily letter into room
     else putLetter (envRoom env) l
-         >> collectPhase h env tbl
+         >> collectPhase pInfo h env
 
-terminatedPhase :: Letter -> KayleEnv -> MaintainTbl -> IO ()
-terminatedPhase l env tbl =
-  let seqMaybe = retriFromHeader l "seq"
+  where interruptedHandler (SomeException e) =
+          let ident_ = procId pInfo
+              subTest = procSubTest pInfo
+              unregLetter = unregisterLetter ident_ subTest
+              room = envRoom env
+          in putLetter room unregLetter
+             >> fail "Connection interrupted"
+
+terminatedPhase :: Letter -> KayleEnv -> IO ()
+terminatedPhase l env =
+  let subTestMaybe = retriFromContent l "who"
       room = (envRoom env)
-      termLetter = terminatedLetter (ident l) ""
-      terminated seq = atomically $ removeMElem tbl (identWithSeq (ident l) seq)
-  in maybe (return 0) terminated seqMaybe
-     >>= \code -> bool (return ()) (putLetter room termLetter) (code == 0)
+  in notifyKayle subTestMaybe
+
+  where notifyKayle whoMaybe =
+          maybe (return ())
+          (\who -> putLetter (envRoom env) $ termLetter who)
+          whoMaybe
+
+        termLetter who = terminatedLetter (ident l) who
 
 -- Get SeqId from another side
 preparePhase' :: Homer -> KayleArgs -> IO Int
 preparePhase' h args =
-  let reql = reqLetter $ ident2Str $ Identity (target args) (sha args) (event args)
+  let ident_ = ident2Str $ Identity (target args) (sha args) (event args)
+      reql = reqLetter ident_ (target args)
   in sendLetter h reql
      >> waitLetter h
      -- No seqId infor in the ack letter so the server maybe incomplete
@@ -241,7 +244,7 @@ terminatePhase' :: String -- ident
                 -> KayleArgs
                 -> IO ()
 terminatePhase' ident i h args =
-  let disconnl = disconnLetter ident i
+  let disconnl = disconnLetter ident i (target args)
   in sendLetter h disconnl >> return ()
 
 listenSockGet :: Configs -> IO Socket
@@ -256,14 +259,6 @@ listenSockGet cfgs = do
 
   return sock
 
-identWithSeq :: String -> String -> String
-identWithSeq ident_ seq = ident_ ++ ":" ++ seq
-
-identWithoutSeq :: String -> String
-identWithoutSeq ident_ =
-  let array = identSplit ident_
-  in ident2Str $ Identity (array !! 0) (array !! 1) (array !! 2)
-
 -- Doorkeeper Unit Testing
 doorKeeperUnitTest :: Test
 doorKeeperUnitTest = TestList [TestLabel "DoorKeeper UnitTesting" (TestCase doorKeeperAssert)]
@@ -273,10 +268,10 @@ doorKeeperUnitTest = TestList [TestLabel "DoorKeeper UnitTesting" (TestCase door
 
       -- IdentWithSeq and identWithoutSeq
       let testStr = "GL8900:12345678:merge_request"
-          withSeq = identWithSeq testStr  "1"
+          withSeq = testStr
       assertEqual "IdentWithSeq" (testStr ++ ":1") withSeq
 
-      assertEqual "IdentWithoutSeq" testStr (identWithoutSeq withSeq)
+      assertEqual "IdentWithoutSeq" testStr withSeq
 
       -- MaintainTbl Testing
       tbl <- atomically $ newMaintainTbl

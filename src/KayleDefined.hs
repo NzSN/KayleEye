@@ -3,6 +3,7 @@ module KayleDefined where
 import Test.HUnit
 import Debug.Trace
 
+import Control.Concurrent.STM
 import System.Environment
 import Modules.ConfigReader
 import Network.HTTP.Client
@@ -10,6 +11,7 @@ import Homer
 import Notifier
 import LetterBox
 import Room
+import Time
 import Puller
 import Data.Map as Map
 
@@ -60,6 +62,110 @@ itemDelete env cName iName =
 itemDeleteAll :: CtrlEnv -> ItemName -> CtrlEnv
 itemDeleteAll env iName = mapWithKey itemDrop env
   where itemDrop k a = Map.delete iName a
+
+type Event = String
+data RegisterItem = RegItem { regIdent :: String, regStatus :: String, tod :: TimeOfDay' } deriving (Show, Eq)
+newtype RegisterItems = RegItems { regItems :: [RegisterItem] } deriving (Show, Eq)
+data RegisterBlock = RegBlk { regBlk :: Map String RegisterItems } deriving (Show, Eq)
+data RegisterTbl = RegTbl { regTbl :: TVar (Map Event RegisterBlock) }
+
+register_status = "register"
+unRegister_status = "unRegister"
+finished_status = "finished"
+
+newRegisterTbl :: STM RegisterTbl
+newRegisterTbl = newTVar Map.empty >>= return . RegTbl
+
+addEvent :: RegisterTbl -> String -> STM ()
+addEvent rTbl event =
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (return $ Map.insert event (RegBlk Map.empty) tbl)
+  >>= \tbl -> writeTVar (regTbl rTbl) tbl
+
+getEvent :: RegisterTbl -> String -> STM (Maybe RegisterBlock)
+getEvent rTbl e = (readTVar $ regTbl rTbl) >>= \tbl -> return $ Map.lookup e tbl
+
+addBlock :: RegisterTbl
+            -> String -- Event name
+            -> String -- Block name
+            -> STM ()
+addBlock rTbl e b =
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (return $ Map.update event_update e tbl)
+  >>= \tbl -> writeTVar (regTbl rTbl) tbl
+
+  where event_update block = return . RegBlk $ Map.insert b (RegItems []) (regBlk block)
+
+getBlock :: RegisterTbl
+         -> String -- Event name
+         -> String -- Block name
+         -> STM (Maybe RegisterItems)
+getBlock rTbl e b =
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (return $ Map.lookup e tbl
+                >>= \block -> Map.lookup b $ regBlk block)
+
+addItem :: RegisterTbl
+        -> String -- Event name
+        -> String -- Block name
+        -> RegisterItem
+        -> STM ()
+addItem rTbl e b item =
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (return $ Map.update item_update e tbl)
+  >>= \tbl -> writeTVar (regTbl rTbl) tbl
+
+  where item_update block = Just . RegBlk $ Map.update item_update' b (regBlk block)
+        item_update' items =
+          let itemArray = regItems items
+          in if elem item itemArray
+             then Just . RegItems $ itemArray
+             else Just . RegItems $ item:itemArray
+
+iStatusChange :: RegisterTbl
+         -> String -- Event
+         -> String -- Block
+         -> String -- Item
+         -> String -- Status
+         -> TimeOfDay'
+         -> STM ()
+iStatusChange rTbl e b i status tod =
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (return $ Map.update register_handle e tbl)
+  >>= \tbl -> writeTVar (regTbl rTbl) tbl
+
+  where register_handle block = Just . RegBlk $ Map.update register_handle' b (regBlk block)
+        register_handle' items = let itemArray = regItems items
+                                 in Just . RegItems $ Prelude.map register_map_func itemArray
+        register_map_func item = if regIdent item == i
+                                 then RegItem (regIdent item) status tod
+                                 else item
+
+register :: RegisterTbl
+           -> String -- Event
+           -> String -- Block
+           -> String -- Item
+           -> TimeOfDay'
+           -> STM ()
+register rTbl e b i tod = iStatusChange rTbl e b i register_status tod
+
+
+unregister :: RegisterTbl
+           -> String -- Event
+           -> String -- Block
+           -> String -- Item
+           -> TimeOfDay'
+           -> STM ()
+unregister rTbl e b i tod = iStatusChange rTbl e b i unRegister_status tod
+
+markFinished :: RegisterTbl
+           -> String -- Event
+           -> String -- Block
+           -> String -- Item
+           -> TimeOfDay'
+           -> STM ()
+markFinished rTbl e b i tod = iStatusChange rTbl e b i finished_status tod
+
 
 
 data KayleEnv = KayleEnv { envCfg :: Configs,

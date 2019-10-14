@@ -6,6 +6,7 @@ module Letter where
 
 import KayleConst
 
+import Data.Bool
 import Data.Maybe
 import Data.Aeson
 import Data.Map as Map
@@ -40,31 +41,80 @@ data Letter = Letter { ident :: IdentStr,
                        content :: Map String String } | Empty_letter deriving Show
 
 -- Control Letter
+
+-- While Doorkeeper of KayleHome receive an req letter
+-- it will send a register letter to notify KayleHome core
+registerLetter :: String -- Ident
+               -> String -- SubTest
+               -> Letter
+registerLetter ident_ subTest =
+  Letter ident_ (fromList [("event", control_event)]) (fromList [("cmd", "register"), ("who", subTest)])
+
+-- While Kayle is disconnected accidently DoorKeeper will unregister
+-- the correspond subtest
+unregisterLetter :: String -- Ident
+                 -> String -- SubTest
+                 -> Letter
+unregisterLetter ident_ subTest =
+  Letter ident_ (fromList [("event", control_event)]) (fromList [("cmd", "unregister"), ("who", subTest)])
+
+-- While DoorKeeper of KayleHome receive an disconn letter
+-- it will send a register letter to notify KayleHome core
 terminatedLetter :: String -- Ident
                  -> String -- Name of sub test
                  -> Letter
-terminatedLetter ident_ subTest =
-  Letter ident_ (fromList [("event", control_event)]) (fromList [("who", subTest)])
+terminatedLetter ident_ subTest = Letter ident_
+                                  (fromList [("event", control_event)])
+                                  (fromList [("who", subTest)])
 
-reqLetter :: IdentStr -> Letter
-reqLetter ident = Letter ident (fromList [("event", "req")]) Map.empty
+-- Answer letter is used by KayleHome to answer to DoorKeeper
+answerLetter :: IdentStr
+             -> String -- SubTest
+             -> String -- Answer
+             -> Letter
+answerLetter ident_ subTest answer = Letter ident_
+                              (fromList [("event", "answer")])
+                              (fromList [("answer", answer)])
 
+answerOK_Letter :: IdentStr -> String -> Letter
+answerOK_Letter ident_ subTest = answerLetter ident_ subTest "Accepted"
+
+answerRejected_Letter :: IdentStr -> String -> Letter
+answerRejected_Letter ident_ subTest = answerLetter ident_ subTest "Rejected"
+
+isAnswerOK :: Letter -> Bool
+isAnswerOK l =
+  let c = content l
+      answer = Map.lookup "answer" c
+  in maybe False (\an -> bool False True (an == "Accepted")) answer
+
+-- Request letter is used by Kayle to send request to KayleHome
+-- to acquire a seqID
+reqLetter :: IdentStr
+          -> String -- SubTest
+          -> Letter
+reqLetter ident subTest = Letter ident
+                          (fromList [("event", "req")])
+                          (fromList [("who", subTest)])
+-- Ack letter is used by KayleHome to send the assigned seqID to
+-- Kayle
 ackLetter :: IdentStr
-          -> Int -- Seq id
+          -> Bool -- Ture: Accept || False: Rejected
           -> Letter
 ackLetter ident i = Letter ident
                     (fromList [("event", "ack")])
-                    (fromList [("seq", (show i))])
+                    (fromList [("seq", answerStr)])
+  where answerStr = bool "Rejected" "Accepted" i
 
-mergeBlockLetter :: IdentStr -> Letter
-mergeBlockLetter ident_ = Letter ident_
-                    (fromList [("event", control_event)])
-                    (fromList [("cmd", cmd_noMerged)])
-
+-- Onece Kayle is done its job it will disconnect from KayleHome via
+-- sending a disconn letter
 disconnLetter :: IdentStr
               -> Int -- SeqId
+              -> String -- SubTest
               -> Letter
-disconnLetter ident i = Letter ident (fromList [("event", "disconn"), ("seq", (show i))]) Map.empty
+disconnLetter ident i subTest = Letter ident
+                        (fromList [("event", "disconn"), ("seq", (show i))])
+                        (fromList [("who", subTest)])
 
 
 
