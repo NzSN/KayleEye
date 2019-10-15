@@ -90,20 +90,31 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
                       TestLabel "Letter updates" (TestCase homerAssert2),
                       TestLabel "Letter Header Retri" (TestCase homerAssert3)]
   where homerAssert = do
-          homer_recv <- pickHomer "localhost" "8011"
-          homer_send <- pickHomer "localhost" "8011"
+          -- Create sock
+          (addr:xs) <- getAddrInfo Nothing (Just "127.0.0.1") (Just "8011")
+          sock <- socket (addrFamily addr) Stream defaultProtocol
+          bind sock (addrAddress addr)
+          listen sock 10
 
-          m <- newEmptyMVar
+          m1 <- newEmptyMVar
+          m2 <- newEmptyMVar
+
           -- Server
-          -- forkIO $ waitHomer homer_recv
-          --   >>= (\x -> check x m)
-          --  >> return ()
+          forkIO $ do
+            homer <- waitHomer sock
+            l <- waitLetter homer
+            print l
+            putMVar m1 ()
 
           -- Client
-          -- forkIO $ delay 1000000 >> homerFlyWith homer_send l >> return ()
+          forkIO $ do
+            homer <- pickHomer "127.0.0.1" "8011"
+            sendLetter homer l
+            print "Sended"
+            putMVar m2 ()
 
-          r <- takeMVar m
-          assertEqual "HomerTest" 't' r
+          takeMVar m1
+          takeMVar m2
 
         l = Letter (ident2Str $ Identity "item1" "12345" "merge")
             (fromList [("iid", "1")])

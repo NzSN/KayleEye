@@ -24,117 +24,16 @@ import Control.Exception as Excep
 
 import Debug.Trace
 
-data ProcInfo = ProcInfo { procId :: IdentStr, procSubTest :: String } deriving Show
-
-data MaintainElem = MaintainElem { testID :: String,
-                                   status :: String,
-                                   lastUpdated :: TimeOfDay' }
-                  | Empty_Elem deriving (Show, Eq)
-
-data MaintainTbl = MaintainTbl { tbl :: TVar (Map.Map String [MaintainElem]) }
-
-newMaintainTbl :: STM MaintainTbl
-newMaintainTbl = do
-  tbl <- newTVar Map.empty
-  return $ MaintainTbl tbl
-
-newMElemWithTime :: String -> String -> IO MaintainElem
-newMElemWithTime tID status = do
-  tod <- getTimeNow
-  return $ MaintainElem tID status tod
-
-addMElem :: MaintainTbl -> MaintainElem -> STM ()
-addMElem mTbl elem = do
-  let mTbl_tvar = tbl mTbl
-
-  map_ <- readTVar mTbl_tvar
-
-  let key = (testID elem)
-      newMap = bool
-        (Map.insert key (fromJust $ addFunc []) map_)
-        (Map.update addFunc key map_)
-        (Map.member key map_)
-
-  writeTVar mTbl_tvar newMap
-
-  where addFunc elems = Just $ if notElem elem elems
-                               then elem:elems
-                               else let newL = List.delete elem elems
-                                    in elem:newL
-
-searchMElem :: MaintainTbl
-            -> String -- Test name
-            -> STM (Maybe MaintainElem)
-searchMElem mTbl tName = do
-  map_ <- readTVar (tbl mTbl)
-
-  return $ Map.lookup key map_
-    >>= \elems ->
-          Just $ foldl (\acc x -> bool acc x (testID x == tName)) Empty_Elem elems
-
-  where key = tName
-
-updateStatus :: MaintainTbl
-             -> String -- Test name
-             -> String -- New status
-             -> STM ()
-updateStatus mTbl tName nStatus = do
-  let mTbl_tvar = tbl mTbl
-
-  map_ <- readTVar mTbl_tvar
-
-  let key = tName
-      newMap = Map.update (\elems -> Just $ map updateFunc elems) key map_
-  writeTVar mTbl_tvar newMap
-
-  where updateFunc elem =
-          let newElem = MaintainElem tName nStatus (lastUpdated elem)
-          in bool elem newElem (testID elem == tName)
-
-updateLast :: MaintainTbl
-           -> String -- Test name
-           -> TimeOfDay'
-           -> STM ()
-updateLast mTbl tName tod = do
-  let mTbl_tvar = tbl mTbl
-
-  map_ <- readTVar mTbl_tvar
-
-  let key = tName
-      newMap = Map.update (\elems -> Just $ map updateFunc elems) key map_
-  writeTVar mTbl_tvar newMap
-
-  where updateFunc elem =
-          let newElem = MaintainElem tName (status elem) tod
-          in bool elem newElem (testID elem == tName)
-
-removeMElem :: MaintainTbl
-            -> String -- Test name
-            -> STM Int
-removeMElem mTbl tName = do
-  let mTbl_tvar = tbl mTbl
-
-  map_ <- readTVar mTbl_tvar
-
-  let key = tName
-      newMap = Map.update (\elems -> Just $ removeFunc elems) key map_
-      elemsMayb = Map.lookup key newMap
-      pMayb = elemsMayb >>= \elems -> if List.length elems == 0
-                                      then Just $ (1, Map.delete key newMap)
-                                      else Just $ (0, newMap)
-
-  maybe (return 0) (\p -> writeTVar mTbl_tvar (snd p) >> (return $ fst p)) pMayb
-
-  where removeFunc (x:xs)
-          | (testID x) == tName = xs
-          | otherwise = x : removeFunc xs
+data ProcInfo = ProcInfo { procId :: IdentStr,
+                           procSubTest :: String,
+                           procRoom :: Room,
+                           procHomer :: Homer }
 
 doorKeeper :: KayleEnv -> IO ()
 doorKeeper env = do
   let cfgs = envCfg env
       room = envRoom env
       initSeq = 0
-      maintainTbl = newMaintainTbl
 
   -- Master socket
   masterSock <- listenSockGet cfgs
@@ -161,72 +60,87 @@ doorKeeperWork h env = do
 
   where
     -- Test result collected
-    nextPhase pInfo = collectPhase pInfo h env
+    nextPhase pInfo = collectPhase pInfo
     -- Disconn letter is arrived trun into terminated phase
-                >>= \l -> terminatedPhase l env
+                >>= \l -> terminatedPhase l pInfo
 
 -- Assign SeqId and actions depend on event type
 preparePhase :: Homer -> KayleEnv -> IO (Maybe ProcInfo)
 preparePhase h env = do
-  -- Waiting for the first ask letter
+  -- Waiting for the first request letter
   l_req <- waitLetter h
 
-  -- Deal with request letter
   let subTest = retriFromHeader l_req "who"
 
-  maybe (return Nothing) (\sub -> register l_req sub) subTest
+  -- Register a channel
+  roomM <- maybe (return Nothing)
+           (\ident_ -> Room.register ident_ (envRoom env)) (registerKey l_req)
 
-  where register req_l who =
+  -- Deal with request letter
+  let sub = fromMaybe "" subTest
+      room = fromMaybe Empty_Room roomM
+
+  if sub == "" || isEmptyRoom room
+    then return Nothing
+    else registerToKayle l_req sub room
+
+  where registerToKayle req_l who newRoom =
           let regLetter req sub = registerLetter (ident req) sub
               ident_ = ident req_l
           -- Register the subTest
-          in (putLetter (envRoom env) $ regLetter req_l who)
+          in (putLetter' newRoom $ regLetter req_l who)
              -- Waiting for registering
-             >> getLetter (envRoom env)
+             >> getLetter' newRoom
              -- Giva an ack to Kayle
              >>= \answer -> (if isAnswerOK answer
                               -- If register success then add the connection to maintain table
-                            then (sendLetter h $ ackLetter ident_ True)
-                            else (sendLetter h $ ackLetter ident_ False))
+                            then (sendLetter h $ ackAcceptLetter ident_)
+                            else (sendLetter h $ ackRejectedLetter ident_))
                             -- If the request is rejected by KayleHome then just return Nothing
                             -- to exit from the thread.
-                            >> (bool (return Nothing) (return $ Just $ ProcInfo ident_ who)
+                            >> (bool (return Nothing) (return $ Just $ ProcInfo ident_ who newRoom h)
                                  $ isAnswerOK answer)
 
-collectPhase :: ProcInfo -> Homer -> KayleEnv -> IO Letter
-collectPhase pInfo h env = do
+        registerKey :: Letter -> Maybe String
+        registerKey letter = retriFromContent letter "who"
+                             >>= \who -> return $ (ident letter) ++ ":" ++ who
+
+collectPhase :: ProcInfo -> IO Letter
+collectPhase pInfo = do
+  let h = procHomer pInfo
+
   -- If connection is interrupted just unregister the sub test
   l <- withGuard interruptedHandler $ waitLetter h
 
   if typeOfLetter l == disconn_event
     then releaseHomer h >> return l
     -- put push,merge,daily letter into room
-    else putLetter (envRoom env) l
-         >> collectPhase pInfo h env
+    else putLetter (procRoom pInfo) l
+         >> collectPhase pInfo
 
   where interruptedHandler (SomeException e) =
           let ident_ = procId pInfo
               subTest = procSubTest pInfo
               unregLetter = unregisterLetter ident_ subTest
-              room = envRoom env
+              room = procRoom pInfo
           in putLetter room unregLetter
              >> fail "Connection interrupted"
 
-terminatedPhase :: Letter -> KayleEnv -> IO ()
-terminatedPhase l env =
+terminatedPhase :: Letter -> ProcInfo -> IO ()
+terminatedPhase l pInfo =
   let subTestMaybe = retriFromContent l "who"
-      room = (envRoom env)
+      room = (procRoom pInfo)
   in notifyKayle subTestMaybe
 
   where notifyKayle whoMaybe =
           maybe (return ())
-          (\who -> putLetter (envRoom env) $ termLetter who)
+          (\who -> putLetter (procRoom pInfo) $ termLetter who)
           whoMaybe
 
         termLetter who = terminatedLetter (ident l) who
 
 -- Get SeqId from another side
-preparePhase' :: Homer -> KayleArgs -> IO Int
+preparePhase' :: Homer -> KayleArgs -> IO Bool
 preparePhase' h args =
   let ident_ = ident2Str $ Identity (target args) (sha args) (event args)
       reql = reqLetter ident_ (target args)
@@ -234,17 +148,16 @@ preparePhase' h args =
      >> waitLetter h
      -- No seqId infor in the ack letter so the server maybe incomplete
      -- just throw and error.
-     >>= \l -> maybe (error "Error format")
-               -- return the seqId retrive from the ack letter just received
-               (\seq -> return (read seq :: Int)) (retriFromContent l "seq")
+     >>= \l -> maybe (return False) isAccepted (retriFromContent l "answer")
+
+  where isAccepted answer = return $ answer == "Accepted"
 
 terminatePhase' :: String -- ident
-                -> Int    -- SeqId
                 -> Homer
                 -> KayleArgs
                 -> IO ()
-terminatePhase' ident i h args =
-  let disconnl = disconnLetter ident i (target args)
+terminatePhase' ident_ h args =
+  let disconnl = disconnLetter ident_ (target args)
   in sendLetter h disconnl >> return ()
 
 listenSockGet :: Configs -> IO Socket
@@ -258,27 +171,3 @@ listenSockGet cfgs = do
   listen sock 10
 
   return sock
-
--- Doorkeeper Unit Testing
-doorKeeperUnitTest :: Test
-doorKeeperUnitTest = TestList [TestLabel "DoorKeeper UnitTesting" (TestCase doorKeeperAssert)]
-  where
-    doorKeeperAssert :: Assertion
-    doorKeeperAssert = do
-
-      -- IdentWithSeq and identWithoutSeq
-      let testStr = "GL8900:12345678:merge_request"
-          withSeq = testStr
-      assertEqual "IdentWithSeq" (testStr ++ ":1") withSeq
-
-      assertEqual "IdentWithoutSeq" testStr withSeq
-
-      -- MaintainTbl Testing
-      tbl <- atomically $ newMaintainTbl
-      newElem <- newMElemWithTime withSeq "Online"
-
-      atomically $ addMElem tbl $ newElem
-      elem <- atomically $ searchMElem tbl withSeq
-      print elem
-      assertEqual "Search Maintain Table" withSeq $
-        maybe ("") (\elem_ -> testID elem_) elem

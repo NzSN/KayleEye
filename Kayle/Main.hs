@@ -56,20 +56,20 @@ doJudge' args configs = do
       -- If first test is failed then run the commands
       -- pair with @failed, this provide opportunity to
       -- do clean and try again.
-      testing i = judgeProc >>=
+      testing = judgeProc >>=
                   \judge' -> either (\_ -> reJudge) (\_ -> return $ Right True) judge'
                   >>= \x -> return $ fromRight False x
 
   -- Get homer
   h <- homer
   -- Get seqId in prepare phase
-  seqId <- preparePhase' h args
+  isAccepted <- preparePhase' h args
   -- Do testing job
-  success <- testing seqId
+  success <- testing
   -- Send testing result
-  notify seqId h args success
+  notify h args success
   -- Terminated the testing
-  terminatePhase' "" seqId h args
+  terminatePhase' "" h args
   -- Throw error if testing is failed
   throwError success
 
@@ -78,15 +78,15 @@ doJudge' args configs = do
     throwError bool = if bool == False then error "Test failed" else return ()
 
 -- Accept if pass test otherwise throw an error
-notify :: Int -> Homer -> KayleArgs -> Bool -> IO ()
-notify i h args False = notify' i h args (fromList [(target args, "F")])
-notify i h args True = notify' i h args (fromList [(target args, "T")])
+notify :: Homer -> KayleArgs -> Bool -> IO ()
+notify h args False = notify' h args (fromList [(target args, "F")])
+notify h args True = notify' h args (fromList [(target args, "T")])
 
-notify' :: Int -> Homer -> KayleArgs -> Map String String -> IO ()
-notify' seq homer args c = let i = ident2Str $ Identity (proj args) (sha args) (event args)
-                               h = fromList [("event", event args), ("iid", iid args), ("seq", (show i))]
-                               l = Letter i h c
-                           in sendLetter homer l >> return ()
+notify' :: Homer -> KayleArgs -> Map String String -> IO ()
+notify' homer args c = let i = ident2Str $ Identity (proj args) (sha args) (event args)
+                           h = fromList [("event", event args), ("iid", iid args)]
+                           l = Letter i h c
+                       in sendLetter homer l >> return ()
 
 judge :: TestContent_cfg
       -> String -- Build commands

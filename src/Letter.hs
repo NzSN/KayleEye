@@ -48,7 +48,7 @@ registerLetter :: String -- Ident
                -> String -- SubTest
                -> Letter
 registerLetter ident_ subTest =
-  Letter ident_ (fromList [("event", control_event)]) (fromList [("cmd", "register"), ("who", subTest)])
+  Letter ident_ (fromList [("event", register_event)]) (fromList [("who", subTest)])
 
 -- While Kayle is disconnected accidently DoorKeeper will unregister
 -- the correspond subtest
@@ -56,7 +56,7 @@ unregisterLetter :: String -- Ident
                  -> String -- SubTest
                  -> Letter
 unregisterLetter ident_ subTest =
-  Letter ident_ (fromList [("event", control_event)]) (fromList [("cmd", "unregister"), ("who", subTest)])
+  Letter ident_ (fromList [("event", unRegister_event)]) (fromList [("who", subTest)])
 
 -- While DoorKeeper of KayleHome receive an disconn letter
 -- it will send a register letter to notify KayleHome core
@@ -64,23 +64,23 @@ terminatedLetter :: String -- Ident
                  -> String -- Name of sub test
                  -> Letter
 terminatedLetter ident_ subTest = Letter ident_
-                                  (fromList [("event", control_event)])
+                                  (fromList [("event", terminated_event)])
                                   (fromList [("who", subTest)])
+
 
 -- Answer letter is used by KayleHome to answer to DoorKeeper
 answerLetter :: IdentStr
-             -> String -- SubTest
              -> String -- Answer
              -> Letter
-answerLetter ident_ subTest answer = Letter ident_
+answerLetter ident_ answer = Letter ident_
                               (fromList [("event", "answer")])
                               (fromList [("answer", answer)])
 
-answerOK_Letter :: IdentStr -> String -> Letter
-answerOK_Letter ident_ subTest = answerLetter ident_ subTest "Accepted"
+answerAccepted_Letter :: IdentStr -> Letter
+answerAccepted_Letter ident_ = answerLetter ident_ "Accepted"
 
-answerRejected_Letter :: IdentStr -> String -> Letter
-answerRejected_Letter ident_ subTest = answerLetter ident_ subTest "Rejected"
+answerRejected_Letter :: IdentStr -> Letter
+answerRejected_Letter ident_ = answerLetter ident_ "Rejected"
 
 isAnswerOK :: Letter -> Bool
 isAnswerOK l =
@@ -96,24 +96,27 @@ reqLetter :: IdentStr
 reqLetter ident subTest = Letter ident
                           (fromList [("event", "req")])
                           (fromList [("who", subTest)])
--- Ack letter is used by KayleHome to send the assigned seqID to
--- Kayle
+
+-- Ack letter is used by KayleHome to notify whether the request
+-- has beened accepted.
 ackLetter :: IdentStr
           -> Bool -- Ture: Accept || False: Rejected
           -> Letter
 ackLetter ident i = Letter ident
                     (fromList [("event", "ack")])
-                    (fromList [("seq", answerStr)])
+                    (fromList [("anwser", answerStr)])
   where answerStr = bool "Rejected" "Accepted" i
+
+ackAcceptLetter ident_ = ackLetter ident_ True
+ackRejectedLetter ident_ = ackLetter ident_ False
 
 -- Onece Kayle is done its job it will disconnect from KayleHome via
 -- sending a disconn letter
 disconnLetter :: IdentStr
-              -> Int -- SeqId
               -> String -- SubTest
               -> Letter
-disconnLetter ident i subTest = Letter ident
-                        (fromList [("event", "disconn"), ("seq", (show i))])
+disconnLetter ident subTest = Letter ident
+                        (fromList [("event", "disconn")])
                         (fromList [("who", subTest)])
 
 

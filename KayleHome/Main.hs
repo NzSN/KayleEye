@@ -29,6 +29,8 @@ import Network.Socket
 import Data.Map as Map
 import Data.Map.Merge.Strict
 
+import Data.Bool
+
 -- List
 import Data.List as List
 
@@ -52,11 +54,12 @@ import Logger
 import KayleBasics as K
 import RepoOps as R
 import Actions
-import KayleDefined
+import KayleDefined as Def
 import Puller
 import Room
 import Notifier
 import DoorKeeper
+import Time
 
 import Control.Concurrent
 
@@ -93,8 +96,11 @@ main = do
   notifier <- newNotifier configs
   puller <- newPuller manager configs notifier
 
+  -- Create register table
+  regTable <- newRegisterTbl
+
   -- This locker is shared between puller and KayleHome
-  let env = (KayleEnv configs manager args homer bKey room puller Map.empty notifier)
+  let env = (KayleEnv configs manager args homer bKey room puller regTable notifier)
 
   -- Spawn Puller thread
   forkIO $ pullerSpawn puller
@@ -129,19 +135,20 @@ doKayle =
                 else return l
 
       -- Deal with control letter
-      env_ <- if typeOfLetter letter == control_event
-              then liftIO . controlProc letter $ env
-              else return env
+      if isControlEvent $ typeOfLetter letter
+        then (liftIO . controlProc letter $ env)
+             >> procLoop Empty_letter env
+        else return 0
 
       -- fixme: should provide function to deal with different error type
-      eType <- liftIO . catchSql (procLetter' letter bKey env_) $ procHandler
+      eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
 
       case eType of
         -- OK
-        0 -> procLoop Empty_letter env_
+        0 -> procLoop Empty_letter env
         -- ERROR, just retry the letter with new box key.
-        1 -> (liftIO . waitKey_until $ (envCfg env_))
-          >>= \x -> let env_new = kayleEnvSetBKey env_ x
+        1 -> (liftIO . waitKey_until $ (envCfg env))
+          >>= \x -> let env_new = kayleEnvSetBKey env x
                     in procLoop l env_new
 
     procHandler = \_ -> return k_error :: IO Integer
@@ -219,40 +226,64 @@ doKayle =
                            else action False rl env
                          else return k_ok)
 
-controlProc :: Letter -> KayleEnv -> IO KayleEnv
+controlProc :: Letter -> KayleEnv -> IO ()
 controlProc l env =
-  let proc = retriFromContent l "cmd"
-             >>= \cmd -> case cmd of
-                           "req"        -> requestCmd
-                           "terminated" -> terminatedCmd
-  in maybe (return env) (\proc -> proc l env) proc
+  let proc = case typeOfLetter l of
+               "register"   -> return $ registerProc
+               "unRegister" -> return $ unRegisterProc
+               "terminated" -> return $ terminatedProc
+  in maybe (return ()) (\proc -> proc l env) proc
 
-requestCmd :: Letter -> KayleEnv -> IO KayleEnv
-requestCmd l env =
+registerProc :: Letter -> KayleEnv -> IO ()
+registerProc l env = do
+  let identity = str2Ident (ident l)
+      e = ident_event identity
+      i = ident_name identity
+      subTest = retriFromContent l content_who
 
-terminatedCmd :: Letter -> KayleEnv -> IO KayleEnv
-terminatedCmd l env = do
-  let cEnv = envControl env
-      proj = ident l
+  maybe (return ()) (doRegister e i) subTest
 
-      -- The Command's subEnv must exists
-      cEnv_new = clean cEnv proj
+  where room = envRoom env
+        regTable = envRegTbl env
 
-      -- Remove all content in noMerged env relate to the test
-      termEnv = fromJust $ subCtrlEnv cEnv_new cmd_noMerged
+        doRegister e i sub = do
+          isExists <- isItemExists regTable e i sub
 
-  if Map.size termEnv == 0
-    then unlock (envPuller env)
-    else return ()
+          if isExists
+            then isRegister regTable e i sub
+                 >>= bool (return ()) (Def.register regTable e i sub)
+            else getTimeNow
+                 >>= \tod -> (addItem' regTable e i $ RegItem sub register_status tod)
+                 >> (putLetter room $ answerAccepted_Letter (identWithSubTest l))
+unRegisterProc :: Letter -> KayleEnv -> IO ()
+unRegisterProc l env = do
+  let identity = str2Ident (ident l)
+      e = ident_event identity
+      i = ident_name identity
+      subTest = retriFromContent l content_who
 
-  return $ kayleEnvSetCEnv env cEnv_new
+  maybe (return ()) (doUnRegister e i) subTest
+
+  where room = envRoom env
+        regTable = envRegTbl env
+
+        doUnRegister e i sub = do
+          isExists <- isItemExists regTable e i sub
+
+          if isExists
+            then Def.unregister regTable e i sub
+            else return ()
+
+terminatedProc :: Letter -> KayleEnv -> IO ()
+terminatedProc l env = do
+  return ()
+  -- The Command's subEnv must exists
+
+  -- Remove all content in noMerged env relate to the test
 
   where
     isAllTerminated :: [String] -> [String] -> Bool
     isAllTerminated subT allT = List.foldl (\acc x -> acc && elem x subT) True allT
-
-    clean :: CtrlEnv -> String -> CtrlEnv
-    clean cEnv proj = itemDeleteAll cEnv proj
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle

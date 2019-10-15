@@ -17,16 +17,33 @@ second_micro_int :: Int
 second_micro_int = 1000000
 
 -- Letter events
+
+-- Message -- Information purposes
 mr_event = "merge_request"
 push_event = "push"
 daily_event = "daily"
-control_event = "control"
+-- Control -- Control purposes
 disconn_event = "disconn"
 ack_event = "ack"
+answer_event = "answer"
+req_event = "req"
+register_event = "register"
+unRegister_event = "unRegister"
+terminated_event = "terminated"
 
--- Letter control commands
-cmd_noMerged = "noMerged"
-cmd_terminated = "terminated"
+-- Letter Contents
+content_who = "who"
+content_answer = "answer"
+
+isMessageEvent "merge_request" = True
+isMessageEvent "push" = True
+isMessageEvent "daily" = True
+isMessageEvent _ = False
+
+isControlEvent "req" = True
+isControlEvent "ack" = True
+isControlEvent "answer" = True
+isControlEvent "disconn" = True
 
 -- Unit is microseconds
 seconds_micro :: Integer

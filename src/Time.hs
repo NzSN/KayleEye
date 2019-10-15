@@ -10,7 +10,7 @@ import Data.Time.LocalTime
 
 import Text.Regex.TDFA
 
-data TimeOfDay' = TimeOfDay' { tod :: TimeOfDay, tz :: TimeZone } deriving Show
+data TimeOfDay' = TimeOfDay' { tod :: TimeOfDay, tz :: TimeZone } | Empty_Tod deriving Show
 
 instance Eq TimeOfDay' where
   t1 == t2 = (toMins $ toUtc t1) == (toMins $ toUtc t2)

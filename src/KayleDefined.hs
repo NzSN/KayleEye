@@ -9,59 +9,20 @@ import Modules.ConfigReader
 import Network.HTTP.Client
 import Homer
 import Notifier
+import Letter
+import KayleConst
 import LetterBox
 import Room
 import Time
 import Puller
+
+import Data.Maybe as Maybe
 import Data.Map as Map
+import Data.List as List
 
 import Control.Concurrent
 
 type Args = [String]
-
-type CmdName = String
-type ItemName = String
-
-type CtrlItem = [String]
-type CtrlSubEnv = Map String CtrlItem
-type CtrlEnv = Map String CtrlSubEnv
-
-subCtrlEnv :: CtrlEnv -> CmdName -> Maybe CtrlSubEnv
-subCtrlEnv env cmd = Map.lookup cmd env
-
-ctrlItem :: CtrlSubEnv -> ItemName -> Maybe CtrlItem
-ctrlItem env iname = Map.lookup iname env
-
-subEnvInsert :: CtrlEnv -> CmdName -> CtrlSubEnv -> CtrlEnv
-subEnvInsert env cName subEnv = insert cName subEnv env
-
-itemSearch :: CtrlEnv -> CmdName -> ItemName -> Maybe CtrlItem
-itemSearch env cName iName =
-  Map.lookup cName env >>= \subEnv -> Map.lookup iName subEnv
-
-itemInsert :: CtrlEnv -> CmdName -> ItemName -> CtrlItem -> CtrlEnv
-itemInsert env cName iName item =
-  update subEnvInsert cName env
-
-  where subEnvInsert :: CtrlSubEnv -> Maybe CtrlSubEnv
-        subEnvInsert subEnv = Just $ Map.insert iName item subEnv
-
-itemUpdate :: CtrlEnv -> CmdName -> ItemName -> CtrlItem -> CtrlEnv
-itemUpdate env cName iName item =
-  update subEnvUpdate cName env
-
-  where subEnvUpdate :: CtrlSubEnv -> Maybe CtrlSubEnv
-        subEnvUpdate subEnv = Just $ Map.update (\item_ -> Just item) iName subEnv
-
-itemDelete :: CtrlEnv -> CmdName -> ItemName -> CtrlEnv
-itemDelete env cName iName =
-  update subEnvDelete cName env
-
-  where subEnvDelete subEnv = Just $ delete iName subEnv
-
-itemDeleteAll :: CtrlEnv -> ItemName -> CtrlEnv
-itemDeleteAll env iName = mapWithKey itemDrop env
-  where itemDrop k a = Map.delete iName a
 
 type Event = String
 data RegisterItem = RegItem { regIdent :: String, regStatus :: String, tod :: TimeOfDay' } deriving (Show, Eq)
@@ -72,35 +33,47 @@ data RegisterTbl = RegTbl { regTbl :: TVar (Map Event RegisterBlock) }
 register_status = "register"
 unRegister_status = "unRegister"
 finished_status = "finished"
+error_status = "error"
 
-newRegisterTbl :: STM RegisterTbl
-newRegisterTbl = newTVar Map.empty >>= return . RegTbl
+newRegisterTbl :: IO RegisterTbl
+newRegisterTbl = atomically $ newTVar Map.empty >>= return . RegTbl
 
-addEvent :: RegisterTbl -> String -> STM ()
-addEvent rTbl event =
+addEvent :: RegisterTbl -> String -> IO ()
+addEvent rTbl event = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.insert event (RegBlk Map.empty) tbl)
   >>= \tbl -> writeTVar (regTbl rTbl) tbl
 
-getEvent :: RegisterTbl -> String -> STM (Maybe RegisterBlock)
-getEvent rTbl e = (readTVar $ regTbl rTbl) >>= \tbl -> return $ Map.lookup e tbl
+getEvent :: RegisterTbl -> String -> IO (Maybe RegisterBlock)
+getEvent rTbl e = atomically $ (readTVar $ regTbl rTbl) >>= \tbl -> return $ Map.lookup e tbl
 
 addBlock :: RegisterTbl
             -> String -- Event name
             -> String -- Block name
-            -> STM ()
-addBlock rTbl e b =
+            -> IO ()
+addBlock rTbl e b = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.update event_update e tbl)
   >>= \tbl -> writeTVar (regTbl rTbl) tbl
 
   where event_update block = return . RegBlk $ Map.insert b (RegItems []) (regBlk block)
 
+removeBlock :: RegisterTbl
+            -> String -- Event name
+            -> String -- Block name
+            -> IO ()
+removeBlock rTbl e b = atomically $
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (return $ Map.update event_update e tbl)
+  >>= \ tbl -> writeTVar (regTbl rTbl) tbl
+
+  where event_update block = return . RegBlk $ Map.delete b $ regBlk block
+
 getBlock :: RegisterTbl
          -> String -- Event name
          -> String -- Block name
-         -> STM (Maybe RegisterItems)
-getBlock rTbl e b =
+         -> IO (Maybe RegisterItems)
+getBlock rTbl e b = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.lookup e tbl
                 >>= \block -> Map.lookup b $ regBlk block)
@@ -109,8 +82,8 @@ addItem :: RegisterTbl
         -> String -- Event name
         -> String -- Block name
         -> RegisterItem
-        -> STM ()
-addItem rTbl e b item =
+        -> IO ()
+addItem rTbl e b item = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.update item_update e tbl)
   >>= \tbl -> writeTVar (regTbl rTbl) tbl
@@ -122,49 +95,117 @@ addItem rTbl e b item =
              then Just . RegItems $ itemArray
              else Just . RegItems $ item:itemArray
 
+addItem' :: RegisterTbl
+        -> String -- Event name
+        -> String -- Block name
+        -> RegisterItem
+        -> IO ()
+addItem' rTbl e b item = atomically $
+  (readTVar $ regTbl rTbl)
+  >>= \tbl -> (if isNothing $ Map.lookup e tbl
+              then (return $ Map.insert e (RegBlk $ Map.insert b (RegItems [item]) Map.empty) tbl)
+              else (return $ Map.update blkProc e tbl))
+  >>= \tbl -> writeTVar (regTbl rTbl) tbl
+
+  where
+    blkProc :: RegisterBlock -> Maybe RegisterBlock
+    blkProc blk =
+      let blk_ = regBlk blk
+      in if isNothing $ Map.lookup b blk_
+         then (Just $ RegBlk $ Map.insert b (RegItems [item]) blk_)
+         else (Just $ RegBlk $ Map.update itemsProc b blk_)
+
+    itemsProc :: RegisterItems -> Maybe RegisterItems
+    itemsProc items =
+      let items_ = regItems items
+      in if elem item items_
+         then Just items
+         else Just $ RegItems $ item:items_
+
+getItem :: RegisterTbl
+        -> String -- Event
+        -> String -- Block
+        -> String -- Item
+        -> IO (Maybe RegisterItem)
+getItem rTbl e b i = atomically $ do
+  tbl <- (readTVar $ regTbl rTbl)
+
+  let itemMay = Map.lookup e tbl
+                >>= \blk -> (Map.lookup b $ regBlk blk)
+                            >>= \items -> (find (\item -> regIdent item == i) $ regItems items)
+
+  return $ maybe Nothing (\item -> return item) itemMay
+
+isItemExists :: RegisterTbl
+             -> String -- Event
+             -> String -- Block
+             -> String -- Item
+             -> IO Bool
+isItemExists rTbl e b i = do
+  exists <- getItem rTbl e b i
+
+  atomically $ return $ maybe False (\_ -> True) exists
+
 iStatusChange :: RegisterTbl
          -> String -- Event
          -> String -- Block
          -> String -- Item
          -> String -- Status
-         -> TimeOfDay'
-         -> STM ()
-iStatusChange rTbl e b i status tod =
-  (readTVar $ regTbl rTbl)
-  >>= \tbl -> (return $ Map.update register_handle e tbl)
-  >>= \tbl -> writeTVar (regTbl rTbl) tbl
+         -> IO ()
+iStatusChange rTbl e b i status = do
+  tod <- getTimeNow
+  atomically $ (readTVar $ regTbl rTbl)
+    >>= \tbl -> (return $ Map.update (\block -> register_handle tod block) e tbl)
+                >>= \tbl -> writeTVar (regTbl rTbl) tbl
 
-  where register_handle block = Just . RegBlk $ Map.update register_handle' b (regBlk block)
-        register_handle' items = let itemArray = regItems items
-                                 in Just . RegItems $ Prelude.map register_map_func itemArray
-        register_map_func item = if regIdent item == i
-                                 then RegItem (regIdent item) status tod
-                                 else item
+  where register_handle tod block =
+          Just . RegBlk $ Map.update (\items -> register_handle' tod items) b (regBlk block)
+        register_handle' tod items =
+          let itemArray = regItems items
+          in Just . RegItems $ Prelude.map (\item -> register_map_func tod item ) itemArray
+        register_map_func tod item =
+          if regIdent item == i
+          then RegItem (regIdent item) status tod
+          else item
 
 register :: RegisterTbl
            -> String -- Event
            -> String -- Block
            -> String -- Item
-           -> TimeOfDay'
-           -> STM ()
-register rTbl e b i tod = iStatusChange rTbl e b i register_status tod
-
+           -> IO ()
+register rTbl e b i = iStatusChange rTbl e b i register_status
 
 unregister :: RegisterTbl
            -> String -- Event
            -> String -- Block
            -> String -- Item
-           -> TimeOfDay'
-           -> STM ()
-unregister rTbl e b i tod = iStatusChange rTbl e b i unRegister_status tod
+           -> IO ()
+unregister rTbl e b i = iStatusChange rTbl e b i unRegister_status
 
 markFinished :: RegisterTbl
            -> String -- Event
            -> String -- Block
            -> String -- Item
-           -> TimeOfDay'
-           -> STM ()
-markFinished rTbl e b i tod = iStatusChange rTbl e b i finished_status tod
+           -> IO ()
+markFinished rTbl e b i = iStatusChange rTbl e b i finished_status
+
+markError :: RegisterTbl
+           -> String -- Event
+           -> String -- Block
+           -> String -- Item
+           -> IO ()
+markError rTbl e b i = iStatusChange rTbl e b i error_status
+
+
+isRegister :: RegisterTbl
+           -> String -- Event
+           -> String -- Block
+           -> String -- Item
+           -> IO Bool
+isRegister rTbl e b i = do
+  item <- getItem rTbl e b i
+
+  return $ maybe False (\i -> regStatus i == register_status) item
 
 
 
@@ -175,7 +216,7 @@ data KayleEnv = KayleEnv { envCfg :: Configs,
                            envKey :: BoxKey,
                            envRoom :: Room,
                            envPuller :: Puller,
-                           envControl :: CtrlEnv,
+                           envRegTbl :: RegisterTbl,
                            envNotifier :: Notifier (String, String) }
 
 kayleEnvSetBKey :: KayleEnv -> BoxKey -> KayleEnv
@@ -186,9 +227,13 @@ kayleEnvSetHomer :: KayleEnv -> Homer -> KayleEnv
 kayleEnvSetHomer (KayleEnv cfg mng args homer key room puller cEnv notifier) h =
   KayleEnv cfg mng args h key room puller cEnv notifier
 
-kayleEnvSetCEnv :: KayleEnv -> CtrlEnv -> KayleEnv
-kayleEnvSetCEnv (KayleEnv cfg mng args homer key room puller cEnv notifier) cEnv_ =
-  KayleEnv cfg mng args homer key room puller cEnv_ notifier
+kayleEnvSetCEnv :: KayleEnv -> RegisterTbl -> KayleEnv
+kayleEnvSetCEnv (KayleEnv cfg mng args homer key room puller rTbl notifier) rTbl_ =
+  KayleEnv cfg mng args homer key room puller rTbl_ notifier
+
+kayleEnvSetRoom :: KayleEnv -> Room -> KayleEnv
+kayleEnvSetRoom (KayleEnv cfg mng args homer key room puller rTbl notifier) room_ =
+  KayleEnv cfg mng args homer key room_ puller rTbl notifier
 
 
 data KayleArgs = KayleArgs {
@@ -213,32 +258,34 @@ getKayleArgs = do
     ((!!) args 5) -- build cmds
     ((!!) args 6) -- isMr
 
+-- Cautions: You should make sure the letter is a
+-- control letter which contain who info in content
+identWithSubTest :: Letter -> String
+identWithSubTest l = (ident l) ++ (maybe "" (\sub -> ":" ++ sub) $ retriFromContent l content_who)
+
 -- Test cases
 definedTest :: Test
 definedTest = TestList [TestLabel "Defined testing" (TestCase definedAssert)]
   where definedAssert :: Assertion
         definedAssert = do
-          let env = empty
+          regTable <- newRegisterTbl
 
-          let new_env = subEnvInsert env "1" empty
-          assertEqual "" True (member "1" new_env)
+          addEvent regTable "Merge"
+          addBlock regTable "Merge" "GL8900"
+          addItem regTable "Merge" "GL8900" $ RegItem "T1" unRegister_status Empty_Tod
+          KayleDefined.register regTable "Merge" "GL8900" "T1"
 
-          let new_env1 = itemInsert new_env "1" "GL8900" ["1", "2", "3"]
-          assertEqual "" (Just ["1", "2", "3"]) $ itemSearch new_env1 "1" "GL8900"
+          itemMay <- getItem regTable "Merge" "GL8900" "T1"
+          let item = fromJust itemMay
 
-          let new_env2 = itemUpdate new_env1 "1" "GL8900" ["2", "3", "4"]
-          assertEqual "" (Just ["2", "3", "4"]) $ itemSearch new_env2 "1" "GL8900"
+          assertEqual "Register" "T1" $ regIdent item
+          assertEqual "Register" register_status $ regStatus item
 
-          let new_env3 = itemDelete new_env2 "1" "GL8900"
-          assertEqual "" (Nothing) $ itemSearch new_env3 "1" "GL8900"
+          unregister regTable "Merge" "GL8900" "T1"
+          itemMay' <- getItem regTable "Merge" "GL8900" "T1"
 
-          let new_env4 = itemInsert new_env "1" "GL8900" ["1", "2", "3"]
-              new_env5 = subEnvInsert new_env4 "2" empty
-              new_env6 = itemInsert new_env5 "2" "GL8900" ["2", "3", "4"]
-              new_env7 = itemDeleteAll new_env6 "GL8900"
-          assertEqual "" (Just ["1", "2", "3"]) $ itemSearch new_env6 "1" "GL8900"
-          assertEqual "" (Just ["2", "3", "4"]) $ itemSearch new_env6 "2" "GL8900"
-          assertEqual "" (Nothing) $ itemSearch new_env7 "1" "GL8900"
-          assertEqual "" (Nothing) $ itemSearch new_env7 "2" "GL8900"
+          let item' = fromJust itemMay'
+          assertEqual "Register" "T1" $ regIdent item'
+          assertEqual "Register" unRegister_status $ regStatus item'
 
           return ()
