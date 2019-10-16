@@ -53,7 +53,7 @@ pickHomer host port = do
     return $ Homer handle
 
 releaseHomer :: Homer -> IO ()
-releaseHomer h = return ()
+releaseHomer h = hClose $ handle h
 
 sendLetter :: Homer -> Letter -> IO Integer
 sendLetter h l = do
@@ -91,7 +91,7 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
                       TestLabel "Letter Header Retri" (TestCase homerAssert3)]
   where homerAssert = do
           -- Create sock
-          (addr:xs) <- getAddrInfo Nothing (Just "127.0.0.1") (Just "8011")
+          (addr:xs) <- getAddrInfo Nothing (Just "127.0.0.1") (Just "8013")
           sock <- socket (addrFamily addr) Stream defaultProtocol
           bind sock (addrAddress addr)
           listen sock 10
@@ -104,13 +104,20 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
             homer <- waitHomer sock
             l <- waitLetter homer
             print l
+
+            sendLetter homer l
+
             putMVar m1 ()
 
           -- Client
           forkIO $ do
-            homer <- pickHomer "127.0.0.1" "8011"
+            homer <- pickHomer "127.0.0.1" "8013"
             sendLetter homer l
             print "Sended"
+
+            rl <- waitLetter homer
+            print $ "Client Receive :" ++ (show rl)
+
             putMVar m2 ()
 
           takeMVar m1

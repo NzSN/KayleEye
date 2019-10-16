@@ -46,7 +46,7 @@ register ident_ r = do
 
   if member ident_ map_
     -- Receiver exists, register failed
-    then return Nothing
+    then putMVar out_ map_ >> return Nothing
     -- No DuplexChannel is register with that identifier just register
     else newChan >>= \chan ->
                        let regedMap = insert ident_ chan map_

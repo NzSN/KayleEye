@@ -24,7 +24,7 @@ ident2Str :: Identity -> IdentStr
 ident2Str i = (ident_name i) ++ ":" ++ (ident_sha i) ++ ":" ++ (ident_event i)
 
 str2Ident :: IdentStr -> Identity
-str2Ident str = Identity (identPart !! 1) (identPart !! 2) (identPart !! 3)
+str2Ident str = Identity (identPart !! 0) (identPart !! 1) (identPart !! 2)
   where identPart = identSplit str
 
 identSplit :: String -> [String]
@@ -63,30 +63,29 @@ unregisterLetter ident_ subTest =
 terminatedLetter :: String -- Ident
                  -> String -- Name of sub test
                  -> Letter
-terminatedLetter ident_ subTest = Letter ident_
-                                  (fromList [("event", terminated_event)])
-                                  (fromList [("who", subTest)])
-
+terminatedLetter ident_ subTest =
+  Letter ident_
+  (fromList [("event", terminated_event)])
+  (fromList [("who", subTest)])
 
 -- Answer letter is used by KayleHome to answer to DoorKeeper
 answerLetter :: IdentStr
              -> String -- Answer
              -> Letter
 answerLetter ident_ answer = Letter ident_
-                              (fromList [("event", "answer")])
-                              (fromList [("answer", answer)])
+                              (fromList [("event", answer_event)])
+                              (fromList [(content_answer, answer)])
 
 answerAccepted_Letter :: IdentStr -> Letter
-answerAccepted_Letter ident_ = answerLetter ident_ "Accepted"
+answerAccepted_Letter ident_ = answerLetter ident_ answer_accept
 
 answerRejected_Letter :: IdentStr -> Letter
-answerRejected_Letter ident_ = answerLetter ident_ "Rejected"
+answerRejected_Letter ident_ = answerLetter ident_ answer_reject
 
 isAnswerOK :: Letter -> Bool
 isAnswerOK l =
-  let c = content l
-      answer = Map.lookup "answer" c
-  in maybe False (\an -> bool False True (an == "Accepted")) answer
+  let answer = retriFromContent l answer_event
+  in maybe False (\an -> bool False True (an == answer_accept)) answer
 
 -- Request letter is used by Kayle to send request to KayleHome
 -- to acquire a seqID
@@ -103,8 +102,8 @@ ackLetter :: IdentStr
           -> Bool -- Ture: Accept || False: Rejected
           -> Letter
 ackLetter ident i = Letter ident
-                    (fromList [("event", "ack")])
-                    (fromList [("anwser", answerStr)])
+                    (fromList [("event", ack_event)])
+                    (fromList [("answer", answerStr)])
   where answerStr = bool "Rejected" "Accepted" i
 
 ackAcceptLetter ident_ = ackLetter ident_ True
@@ -116,7 +115,7 @@ disconnLetter :: IdentStr
               -> String -- SubTest
               -> Letter
 disconnLetter ident subTest = Letter ident
-                        (fromList [("event", "disconn")])
+                        (fromList [("event", disconn_event)])
                         (fromList [("who", subTest)])
 
 

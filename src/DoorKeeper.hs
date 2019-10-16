@@ -56,7 +56,7 @@ doorKeeperWork h env = do
   -- Prepare stage: Is letter already been processed ? need sync ?
   r <- preparePhase h env
 
-  maybe (return ()) nextPhase r
+  maybe (releaseHomer h) nextPhase r
 
   where
     -- Test result collected
@@ -70,19 +70,23 @@ preparePhase h env = do
   -- Waiting for the first request letter
   l_req <- waitLetter h
 
-  let subTest = retriFromHeader l_req "who"
+  print $ "DoorKeeper:" ++ (show l_req)
+
+  let subTest = retriFromContent l_req "who"
 
   -- Register a channel
   roomM <- maybe (return Nothing)
            (\ident_ -> Room.register ident_ (envRoom env)) (registerKey l_req)
+
+  print $ "DoorKeeper Register Channel"
 
   -- Deal with request letter
   let sub = fromMaybe "" subTest
       room = fromMaybe Empty_Room roomM
 
   if sub == "" || isEmptyRoom room
-    then return Nothing
-    else registerToKayle l_req sub room
+    then sendLetter h (ackRejectedLetter (ident l_req)) >> return Nothing
+    else print "DoorKeeper Register to kayle" >> registerToKayle l_req sub room
 
   where registerToKayle req_l who newRoom =
           let regLetter req sub = registerLetter (ident req) sub
@@ -115,7 +119,7 @@ collectPhase pInfo = do
   if typeOfLetter l == disconn_event
     then releaseHomer h >> return l
     -- put push,merge,daily letter into room
-    else putLetter (procRoom pInfo) l
+    else putLetter' (procRoom pInfo) l
          >> collectPhase pInfo
 
   where interruptedHandler (SomeException e) =
@@ -131,10 +135,11 @@ terminatedPhase l pInfo =
   let subTestMaybe = retriFromContent l "who"
       room = (procRoom pInfo)
   in notifyKayle subTestMaybe
+     >> releaseHomer (procHomer pInfo)
 
   where notifyKayle whoMaybe =
           maybe (return ())
-          (\who -> putLetter (procRoom pInfo) $ termLetter who)
+          (\who -> putLetter' (procRoom pInfo) $ termLetter who)
           whoMaybe
 
         termLetter who = terminatedLetter (ident l) who
@@ -142,13 +147,13 @@ terminatedPhase l pInfo =
 -- Get SeqId from another side
 preparePhase' :: Homer -> KayleArgs -> IO Bool
 preparePhase' h args =
-  let ident_ = ident2Str $ Identity (target args) (sha args) (event args)
+  let ident_ = ident2Str $ Identity (proj args) (sha args) (event args)
       reql = reqLetter ident_ (target args)
   in sendLetter h reql
      >> waitLetter h
      -- No seqId infor in the ack letter so the server maybe incomplete
      -- just throw and error.
-     >>= \l -> maybe (return False) isAccepted (retriFromContent l "answer")
+     >>= \l -> print l >> maybe (return False) isAccepted (retriFromContent l "answer")
 
   where isAccepted answer = return $ answer == "Accepted"
 

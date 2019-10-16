@@ -69,8 +69,8 @@ notifierSpawn n =
           now <- getTimeNow
 
           if isTimeInInterval now bTime eTime
-          then notifyTo n
-          else threadDelay $ (eTime Time.- now) * minute_micro
+          then print "notify" >> notifyTo n
+          else print "Notifier Sleep" >> (threadDelay $ (eTime Time.- now) * minute_micro)
 
           notifyloop bTime eTime
 

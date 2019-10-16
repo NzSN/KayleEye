@@ -33,47 +33,51 @@ data RegisterTbl = RegTbl { regTbl :: TVar (Map Event RegisterBlock) }
 register_status = "register"
 unRegister_status = "unRegister"
 finished_status = "finished"
-error_status = "error"
 
 newRegisterTbl :: IO RegisterTbl
 newRegisterTbl = atomically $ newTVar Map.empty >>= return . RegTbl
 
-addEvent :: RegisterTbl -> String -> IO ()
-addEvent rTbl event = atomically $
+showRegTable :: RegisterTbl -> IO ()
+showRegTable rTbl = do
+  tbl <- atomically $ (readTVar $ regTbl rTbl)
+  print tbl
+
+addBlock :: RegisterTbl -> String -> IO ()
+addBlock rTbl event = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.insert event (RegBlk Map.empty) tbl)
   >>= \tbl -> writeTVar (regTbl rTbl) tbl
 
-getEvent :: RegisterTbl -> String -> IO (Maybe RegisterBlock)
-getEvent rTbl e = atomically $ (readTVar $ regTbl rTbl) >>= \tbl -> return $ Map.lookup e tbl
+getBlock :: RegisterTbl -> String -> IO (Maybe RegisterBlock)
+getBlock rTbl e = atomically $ (readTVar $ regTbl rTbl) >>= \tbl -> return $ Map.lookup e tbl
 
-addBlock :: RegisterTbl
+addItems :: RegisterTbl
             -> String -- Event name
             -> String -- Block name
             -> IO ()
-addBlock rTbl e b = atomically $
+addItems rTbl e b = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.update event_update e tbl)
   >>= \tbl -> writeTVar (regTbl rTbl) tbl
 
   where event_update block = return . RegBlk $ Map.insert b (RegItems []) (regBlk block)
 
-removeBlock :: RegisterTbl
+removeItems :: RegisterTbl
             -> String -- Event name
             -> String -- Block name
             -> IO ()
-removeBlock rTbl e b = atomically $
+removeItems rTbl e b = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.update event_update e tbl)
   >>= \ tbl -> writeTVar (regTbl rTbl) tbl
 
   where event_update block = return . RegBlk $ Map.delete b $ regBlk block
 
-getBlock :: RegisterTbl
+getItems :: RegisterTbl
          -> String -- Event name
          -> String -- Block name
          -> IO (Maybe RegisterItems)
-getBlock rTbl e b = atomically $
+getItems rTbl e b = atomically $
   (readTVar $ regTbl rTbl)
   >>= \tbl -> (return $ Map.lookup e tbl
                 >>= \block -> Map.lookup b $ regBlk block)
@@ -189,14 +193,6 @@ markFinished :: RegisterTbl
            -> IO ()
 markFinished rTbl e b i = iStatusChange rTbl e b i finished_status
 
-markError :: RegisterTbl
-           -> String -- Event
-           -> String -- Block
-           -> String -- Item
-           -> IO ()
-markError rTbl e b i = iStatusChange rTbl e b i error_status
-
-
 isRegister :: RegisterTbl
            -> String -- Event
            -> String -- Block
@@ -270,9 +266,7 @@ definedTest = TestList [TestLabel "Defined testing" (TestCase definedAssert)]
         definedAssert = do
           regTable <- newRegisterTbl
 
-          addEvent regTable "Merge"
-          addBlock regTable "Merge" "GL8900"
-          addItem regTable "Merge" "GL8900" $ RegItem "T1" unRegister_status Empty_Tod
+          addItem' regTable "Merge" "GL8900" $ RegItem "T1" unRegister_status Empty_Tod
           KayleDefined.register regTable "Merge" "GL8900" "T1"
 
           itemMay <- getItem regTable "Merge" "GL8900" "T1"

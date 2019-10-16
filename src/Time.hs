@@ -60,7 +60,7 @@ toUtc t =
 
       hour = todHour $ tod t
       min  = todMin $ tod t
-  in TimeOfDay' (TimeOfDay (hour + hourOffset) (min + minOffset) 0) utc
+  in TimeOfDay' (TimeOfDay (hour Prelude.- hourOffset) (min Prelude.- minOffset) 0) utc
 
 -- String's format is : HH:MMTZ8 or HH:MMTZ-1
 timeStrRegex =  "([0-9]+):([0-9]+)TZ([0-9]+|\\-[0-9]+)"

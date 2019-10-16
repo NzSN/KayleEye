@@ -79,9 +79,6 @@ main = do
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
 
-  let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
-  homer <- pickHomer (C.addr serverOpts) (C.port serverOpts)
-
   -- Box initialization
   let dbOpts = configGet configs databaseGet db_err_msg
   bKey <- boxKeyCreate (C.db_host dbOpts) (C.db_user dbOpts) (C.db_pass dbOpts) (C.db dbOpts)
@@ -100,7 +97,7 @@ main = do
   regTable <- newRegisterTbl
 
   -- This locker is shared between puller and KayleHome
-  let env = (KayleEnv configs manager args homer bKey room puller regTable notifier)
+  let env = (KayleEnv configs manager args Empty_Homer bKey room puller regTable notifier)
 
   -- Spawn Puller thread
   forkIO $ pullerSpawn puller
@@ -130,13 +127,18 @@ doKayle =
           bKey = envKey env
           room = envRoom env
 
+      liftIO . print $ "Wait letter"
+
       letter <- if isEmptyLetter l
                 then liftIO . getLetter $ room
                 else return l
 
+      liftIO . print $ "KayleHome:" ++ (show letter)
+
       -- Deal with control letter
       if isControlEvent $ typeOfLetter letter
         then (liftIO . controlProc letter $ env)
+             >> (liftIO . showRegTable $ (envRegTbl env))
              >> procLoop Empty_letter env
         else return 0
 
@@ -222,8 +224,8 @@ doKayle =
             -- To check that whether the test describe by the letter is done
             >>= (\x -> if x == 1
                          then if isTestSuccess rl
-                           then logKayle "Info" "Accpet Letter" >> action True rl env
-                           else action False rl env
+                              then logKayle "Info" "Accpet Letter" >> action True rl env
+                              else action False rl env
                          else return k_ok)
 
 controlProc :: Letter -> KayleEnv -> IO ()
@@ -236,16 +238,26 @@ controlProc l env =
 
 registerProc :: Letter -> KayleEnv -> IO ()
 registerProc l env = do
-  let identity = str2Ident (ident l)
-      e = ident_event identity
-      i = ident_name identity
-      subTest = retriFromContent l content_who
+  let subTest = retriFromContent l content_who
 
-  maybe (return ()) (doRegister e i) subTest
+  if isNothing testArray
+    then return ()
+    else maybe (return ()) (doRegister e i) subTest
 
   where room = envRoom env
         regTable = envRegTbl env
 
+        -- Get the test set which the letter belong to
+        testSet = testPiecesGet (ident_name identity) (envCfg env)
+        testArray = Map.lookup (ident_name identity) $ testContent $ fromJust testSet
+
+        identity = str2Ident (ident l)
+        e = ident_event identity
+        i = ident l
+
+        mapFunc tod sub = addItem' regTable e i $ RegItem sub unRegister_status tod
+
+        -- Register processing function
         doRegister e i sub = do
           isExists <- isItemExists regTable e i sub
 
@@ -253,13 +265,15 @@ registerProc l env = do
             then isRegister regTable e i sub
                  >>= bool (return ()) (Def.register regTable e i sub)
             else getTimeNow
-                 >>= \tod -> (addItem' regTable e i $ RegItem sub register_status tod)
+                 >>= (\tod -> (return $  Prelude.mapM_ (mapFunc tod) (fromJust testArray)))
+                 >> Def.register regTable e i sub
                  >> (putLetter room $ answerAccepted_Letter (identWithSubTest l))
+
 unRegisterProc :: Letter -> KayleEnv -> IO ()
 unRegisterProc l env = do
   let identity = str2Ident (ident l)
       e = ident_event identity
-      i = ident_name identity
+      i = ident l
       subTest = retriFromContent l content_who
 
   maybe (return ()) (doUnRegister e i) subTest
@@ -275,15 +289,24 @@ unRegisterProc l env = do
             else return ()
 
 terminatedProc :: Letter -> KayleEnv -> IO ()
-terminatedProc l env = do
-  return ()
-  -- The Command's subEnv must exists
-
-  -- Remove all content in noMerged env relate to the test
-
+terminatedProc l env =
+  let sub = fromMaybe "" subMay
+  in markFinished rTbl e i sub
+     >> getItems rTbl e i
+     >>= \items -> let itemArray = fromMaybe (RegItems []) items
+                   in bool (return ()) (removeItems rTbl e i) (isItemsDone itemArray)
   where
-    isAllTerminated :: [String] -> [String] -> Bool
-    isAllTerminated subT allT = List.foldl (\acc x -> acc && elem x subT) True allT
+        rTbl = envRegTbl env
+        e = ident_event identity
+        i = ident l
+        subMay = retriFromContent l content_who
+        identity = str2Ident (ident l)
+
+        isItemsDone items =
+          let itemArray = regItems items
+          in List.foldl (\acc x -> acc && (regStatus x == finished_status)) True itemArray
+
+
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle

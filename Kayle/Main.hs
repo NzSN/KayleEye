@@ -59,19 +59,26 @@ doJudge' args configs = do
       testing = judgeProc >>=
                   \judge' -> either (\_ -> reJudge) (\_ -> return $ Right True) judge'
                   >>= \x -> return $ fromRight False x
+      ident_ = ident2Str $ Identity (proj args) (sha args) (event args)
+
+      next h = do
+        -- Do testing job
+        success <- testing
+        -- Send testing result
+        notify h args success
+        -- Terminated the testing
+        terminatePhase' ident_ h args
+        -- Throw error if testing is failed
+        throwError success
 
   -- Get homer
   h <- homer
   -- Get seqId in prepare phase
   isAccepted <- preparePhase' h args
-  -- Do testing job
-  success <- testing
-  -- Send testing result
-  notify h args success
-  -- Terminated the testing
-  terminatePhase' "" h args
-  -- Throw error if testing is failed
-  throwError success
+
+  if isAccepted
+    then next h
+    else return ()
 
   where
     -- Throw if judge failed
