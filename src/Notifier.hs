@@ -66,11 +66,13 @@ notifierSpawn n =
   in notifyloop beginTime endTime
 
   where notifyloop bTime eTime = do
+          msg <- (readChan $ queue n)
           now <- getTimeNow
 
           if isTimeInInterval now bTime eTime
-          then print "notify" >> notifyTo n
-          else print "Notifier Sleep" >> (threadDelay $ (eTime Time.- now) * minute_micro)
+          then notifyTo' n msg
+          else (threadDelay $ (bTime Time.- now) * minute_micro)
+               >> notifyTo' n msg
 
           notifyloop bTime eTime
 
@@ -89,6 +91,9 @@ notify (Notifier chan cfgs) nu = writeChan chan nu
 -- etters be taken.
 notifyTo :: MessageFormat a => Notifier a -> IO ()
 notifyTo n = (readChan $ queue n) >>= \x -> (handlerSelect n) x $ configs n
+
+notifyTo' :: MessageFormat a => Notifier a -> NotifyUnit a -> IO ()
+notifyTo' n x = (handlerSelect n) x $ configs n
 
 -- Temporarily only support email.
 handlerSelect :: MessageFormat a => Notifier a -> MessageHandler a

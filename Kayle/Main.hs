@@ -18,6 +18,8 @@ import Data.List.Split
 -- Configuration
 import Modules.ConfigReader as C
 import Control.Monad.Reader
+import Control.Monad.Trans.State.Lazy
+import Control.Exception as Ex
 
 -- Constants
 import qualified KayleConst as KConst
@@ -39,7 +41,9 @@ main = let beginToJudge args =
              (loadConfig (cfileName (proj args) (target args)) $ configPath args)
              >>= \configs -> doJudge' args configs
           -- Get arguments and configurations
-       in getKayleArgs >>= beginToJudge
+       in getKayleArgs
+          >>= beginToJudge
+          >> return ()
 
   where cfileName p t = p ++ "_" ++ t
 
@@ -49,6 +53,8 @@ doJudge' args configs = do
       testCmds = cGetCmds configs
       homer = pickHomer (addr serverOpts) (port serverOpts)
 
+      ident_ = ident2Str $ Identity (proj args) (sha args) (event args)
+
       judgeProc = judge testCmds (cmds args) False
       reJudge   = judge testCmds "@failed" True
 
@@ -56,14 +62,13 @@ doJudge' args configs = do
       -- If first test is failed then run the commands
       -- pair with @failed, this provide opportunity to
       -- do clean and try again.
-      testing = judgeProc >>=
-                  \judge' -> either (\_ -> reJudge) (\_ -> return $ Right True) judge'
-                  >>= \x -> return $ fromRight False x
-      ident_ = ident2Str $ Identity (proj args) (sha args) (event args)
+      testing = judgeProc
+                >>= either (\_ -> reJudge) (\_ -> return $ Right True)
+                >>= return . fromRight False
 
-      next h = do
-        -- Do testing job
-        success <- testing
+      process = testing
+
+      post h success = do
         -- Send testing result
         notify h args success
         -- Terminated the testing
@@ -73,16 +78,20 @@ doJudge' args configs = do
 
   -- Get homer
   h <- homer
-  -- Get seqId in prepare phase
-  isAccepted <- preparePhase' h args
+
+  -- Have a request to KayleHome
+  isAccepted <- Ex.handle (\(SomeException e) -> doJudge' args configs >> return False) $
+                preparePhase' h $ args
 
   if isAccepted
-    then next h
+    then process >>= post h
     else return ()
 
   where
     -- Throw if judge failed
     throwError bool = if bool == False then error "Test failed" else return ()
+
+
 
 -- Accept if pass test otherwise throw an error
 notify :: Homer -> KayleArgs -> Bool -> IO ()

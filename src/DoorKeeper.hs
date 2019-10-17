@@ -70,15 +70,11 @@ preparePhase h env = do
   -- Waiting for the first request letter
   l_req <- waitLetter h
 
-  print $ "DoorKeeper:" ++ (show l_req)
-
   let subTest = retriFromContent l_req "who"
 
   -- Register a channel
   roomM <- maybe (return Nothing)
            (\ident_ -> Room.register ident_ (envRoom env)) (registerKey l_req)
-
-  print $ "DoorKeeper Register Channel"
 
   -- Deal with request letter
   let sub = fromMaybe "" subTest
@@ -86,7 +82,7 @@ preparePhase h env = do
 
   if sub == "" || isEmptyRoom room
     then sendLetter h (ackRejectedLetter (ident l_req)) >> return Nothing
-    else print "DoorKeeper Register to kayle" >> registerToKayle l_req sub room
+    else registerToKayle l_req sub room
 
   where registerToKayle req_l who newRoom =
           let regLetter req sub = registerLetter (ident req) sub
@@ -127,7 +123,8 @@ collectPhase pInfo = do
               subTest = procSubTest pInfo
               unregLetter = unregisterLetter ident_ subTest
               room = procRoom pInfo
-          in putLetter room unregLetter
+          in putLetter' room unregLetter
+             >> unRegister ident_ room
              >> fail "Connection interrupted"
 
 terminatedPhase :: Letter -> ProcInfo -> IO ()
@@ -139,7 +136,8 @@ terminatedPhase l pInfo =
 
   where notifyKayle whoMaybe =
           maybe (return ())
-          (\who -> putLetter' (procRoom pInfo) $ termLetter who)
+          (\who -> (putLetter' (procRoom pInfo) $ termLetter who)
+                   >> unRegister (identWithSubTest l) (procRoom pInfo))
           whoMaybe
 
         termLetter who = terminatedLetter (ident l) who
@@ -153,7 +151,7 @@ preparePhase' h args =
      >> waitLetter h
      -- No seqId infor in the ack letter so the server maybe incomplete
      -- just throw and error.
-     >>= \l -> print l >> maybe (return False) isAccepted (retriFromContent l "answer")
+     >>= \l -> maybe (return False) isAccepted (retriFromContent l "answer")
 
   where isAccepted answer = return $ answer == "Accepted"
 

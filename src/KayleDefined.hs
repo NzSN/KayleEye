@@ -131,7 +131,14 @@ getItem :: RegisterTbl
         -> String -- Block
         -> String -- Item
         -> IO (Maybe RegisterItem)
-getItem rTbl e b i = atomically $ do
+getItem rTbl e b i = atomically $ getItem_atom rTbl e b i
+
+getItem_atom :: RegisterTbl
+        -> String -- Event
+        -> String -- Block
+        -> String -- Item
+        -> STM (Maybe RegisterItem)
+getItem_atom rTbl e b i = do
   tbl <- (readTVar $ regTbl rTbl)
 
   let itemMay = Map.lookup e tbl
@@ -140,15 +147,15 @@ getItem rTbl e b i = atomically $ do
 
   return $ maybe Nothing (\item -> return item) itemMay
 
+
 isItemExists :: RegisterTbl
              -> String -- Event
              -> String -- Block
              -> String -- Item
              -> IO Bool
-isItemExists rTbl e b i = do
-  exists <- getItem rTbl e b i
-
-  atomically $ return $ maybe False (\_ -> True) exists
+isItemExists rTbl e b i = atomically $ do
+  exists <- getItem_atom rTbl e b i
+  return $ maybe False (\_ -> True) exists
 
 iStatusChange :: RegisterTbl
          -> String -- Event
@@ -203,6 +210,15 @@ isRegister rTbl e b i = do
 
   return $ maybe False (\i -> regStatus i == register_status) item
 
+isUnRegister :: RegisterTbl
+           -> String -- Event
+           -> String -- Block
+           -> String -- Item
+           -> IO Bool
+isUnRegister rTbl e b i = do
+  item <- getItem rTbl e b i
+
+  return $ maybe False (\i -> regStatus i == unRegister_status) item
 
 
 data KayleEnv = KayleEnv { envCfg :: Configs,

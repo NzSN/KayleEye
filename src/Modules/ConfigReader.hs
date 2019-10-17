@@ -37,6 +37,7 @@ data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: Str
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
 data ExtraEmail_cfg = ExtraEmail_cfg { extraEmails :: [String] } deriving Show
 data NotifyTime_cfg = NotifyTime_cfg { notifyTime :: (TimeOfDay', TimeOfDay') } deriving Show
+data PullTime_cfg = PullTime_cfg { pullTime :: (TimeOfDay', TimeOfDay')} deriving Show
 data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
 data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
 data TestContent_cfg = TestContent_cfg { content :: [(String, String)] } | TestContent_None deriving Show
@@ -84,8 +85,9 @@ optHead = do
          try (string "Database")      <|>
          try (string "ServerAddr")    <|>
          try (string "AdminEmail")    <|>
-         try (string "ExtraEmails")    <|>
-         try (string "NotifyTime")
+         try (string "ExtraEmails")   <|>
+         try (string "NotifyTime")    <|>
+         try (string "PullTime")
 
   return def
 
@@ -286,6 +288,15 @@ notifyTimeGet opts = configRetrive opts "NotifyTime"
          begin = configVal . fst $ p
          end   = configVal . snd $ p
      in NotifyTime_cfg (strToLocalTime begin, strToLocalTime end))
+
+pullTimeGet :: Configs -> Maybe PullTime_cfg
+pullTimeGet opts = configRetrive opts "PullTime"
+  (\(Configs_L cfg) ->
+     let p = configPair (head cfg)
+         begin = configVal . fst $ p
+         end   = configVal . snd $ p
+     in PullTime_cfg (strToLocalTime begin, strToLocalTime end))
+
 
 configGet :: Configs -> (Configs -> Maybe a) -> String -> a
 configGet cfgs f errMsg = case f cfgs of

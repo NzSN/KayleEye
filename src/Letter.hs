@@ -172,6 +172,11 @@ retriFromHeader :: Letter
                 -> Maybe String
 retriFromHeader l k = Map.lookup k (header l)
 
+typeOfLetter' :: Letter -> String
+typeOfLetter' l =
+  let identity = str2Ident (ident l)
+  in ident_event identity
+
 typeOfLetter :: Letter -> String
 typeOfLetter l =
   let type_ = retriFromHeader l "event"
