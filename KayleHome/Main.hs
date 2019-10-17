@@ -332,7 +332,11 @@ registerProc l env = do
 
           if isExists
             then isUnRegister regTable e i sub
-                 >>= bool (putLetter room rejectedAck >> return False) (Def.register regTable e i sub >> return True)
+                 >>= bool
+                 (putLetter room rejectedAck >> return False)
+                 (Def.register regTable e i sub
+                  >> putLetter room acceptedAck
+                  >> return True)
             else getTimeNow
                  >>= (\tod -> Prelude.mapM_ (mapFunc tod) (fromJust testArray))
                  >> Def.register regTable e i sub

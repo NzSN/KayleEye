@@ -83,6 +83,8 @@ doJudge' args configs = do
   isAccepted <- Ex.handle (\(SomeException e) -> doJudge' args configs >> return False) $
                 preparePhase' h $ args
 
+  print "After register"
+
   if isAccepted
     then process >>= post h
     else return ()

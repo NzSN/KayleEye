@@ -72,6 +72,8 @@ preparePhase h env = do
 
   let subTest = retriFromContent l_req "who"
 
+  print $ "DoorKeeper Received:" ++ (show l_req)
+
   -- Register a channel
   roomM <- maybe (return Nothing)
            (\ident_ -> Room.register ident_ (envRoom env)) (registerKey l_req)
@@ -81,21 +83,23 @@ preparePhase h env = do
       room = fromMaybe Empty_Room roomM
 
   if sub == "" || isEmptyRoom room
-    then sendLetter h (ackRejectedLetter (ident l_req)) >> return Nothing
-    else registerToKayle l_req sub room
+    then print "Register channel failed" >> sendLetter h (ackRejectedLetter (ident l_req)) >> return Nothing
+    else print "Register channel success" >> registerToKayle l_req sub room
 
   where registerToKayle req_l who newRoom =
           let regLetter req sub = registerLetter (ident req) sub
               ident_ = ident req_l
           -- Register the subTest
           in (putLetter' newRoom $ regLetter req_l who)
+             >> print "Wait Answer"
              -- Waiting for registering
              >> getLetter' newRoom
+             >>= \answer -> print "Got Answer" >> return answer
              -- Giva an ack to Kayle
              >>= \answer -> (if isAnswerOK answer
                               -- If register success then add the connection to maintain table
-                            then (sendLetter h $ ackAcceptLetter ident_)
-                            else (sendLetter h $ ackRejectedLetter ident_))
+                            then (sendLetter h $ ackAcceptLetter ident_) >> return ()
+                            else (sendLetter h $ ackRejectedLetter ident_) >> unRegister (ident_ ++ ":" ++ who) (newRoom))
                             -- If the request is rejected by KayleHome then just return Nothing
                             -- to exit from the thread.
                             >> (bool (return Nothing) (return $ Just $ ProcInfo ident_ who newRoom h)
@@ -124,7 +128,7 @@ collectPhase pInfo = do
               unregLetter = unregisterLetter ident_ subTest
               room = procRoom pInfo
           in putLetter' room unregLetter
-             >> unRegister ident_ room
+             >> unRegister (ident_ ++ ":" ++ subTest) room
              >> fail "Connection interrupted"
 
 terminatedPhase :: Letter -> ProcInfo -> IO ()
