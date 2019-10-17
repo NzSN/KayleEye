@@ -60,6 +60,7 @@ sendLetter h l = do
   let handle_ = handle h
       letterStr = cs $ letterBuild l
   hPutStrLn handle_ letterStr
+  hFlush handle_
   return k_ok
 
 waitLetter :: Homer -> IO Letter

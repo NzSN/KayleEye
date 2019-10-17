@@ -20,6 +20,7 @@ import Modules.ConfigReader as C
 import Control.Monad.Reader
 import Control.Monad.Trans.State.Lazy
 import Control.Exception as Ex
+import Control.Concurrent.Thread.Delay
 
 -- Constants
 import qualified KayleConst as KConst
@@ -49,9 +50,7 @@ main = let beginToJudge args =
 
 doJudge' :: KayleArgs -> Configs -> IO ()
 doJudge' args configs = do
-  let serverOpts = cGetServer configs
-      testCmds = cGetCmds configs
-      homer = pickHomer (addr serverOpts) (port serverOpts)
+  let testCmds = cGetCmds configs
 
       ident_ = ident2Str $ Identity (proj args) (sha args) (event args)
 
@@ -70,30 +69,56 @@ doJudge' args configs = do
 
       post h success = do
         -- Send testing result
-        notify h args success
+        (h1, _) <- solidTunnel h $ \homer -> notify homer args success
         -- Terminated the testing
-        terminatePhase' ident_ h args
+        (h2, _) <- solidTunnel h1 $ \homer -> terminatePhase' ident_ homer args
         -- Throw error if testing is failed
         throwError success
 
   -- Get homer
-  h <- homer
+  h <- gHomerUntil addr_ port_
 
   -- Have a request to KayleHome
-  isAccepted <- Ex.handle (\(SomeException e) -> doJudge' args configs >> return False) $
-                preparePhase' h $ args
-
-  print "After register"
+  isAccepted <- Ex.handle (\(SomeException e) -> doJudge' args configs >> return False) (preparePhase' h args)
 
   if isAccepted
-    then process >>= post h
-    else return ()
+    then process
+         >>= post h
+    else fail "Request is rejected"
 
   where
+    serverOpts = cGetServer configs
+    addr_ = addr serverOpts
+    port_ = port serverOpts
+    homer = pickHomer (addr serverOpts) (port serverOpts)
+
     -- Throw if judge failed
     throwError bool = if bool == False then error "Test failed" else return ()
 
+    solidTunnel :: Homer -> (Homer -> IO a) -> IO (Homer, a)
+    solidTunnel h f = do
+      Ex.handle (solidHandler f) $ (f h >>= \a -> return (h,a))
 
+    solidHandler f (SomeException e) = do
+      -- Reconnect to KayleHome After connection builded just send request
+      h <- prepareUntil args
+      -- If the request is rejected just throw an exception
+      if isNothing h
+        then fail "Request is rejected"
+        else solidTunnel (fromJust h) f
+
+    prepareUntil args = do
+      h <- gHomerUntil addr_ port_
+      h1 <- Ex.handle (\(SomeException e) -> (delay $ 10 * KConst.seconds_micro) >> prepareUntil args)
+            $ (preparePhase' h args
+               >>= \isAccepted -> if isAccepted
+                                  then return $ Just $ h
+                                  else return $ Nothing)
+      return h1
+
+    gHomerUntil addr port =
+      Ex.handle (\(SomeException e) -> (delay $ 10 * KConst.seconds_micro)
+                  >> gHomerUntil addr port) homer
 
 -- Accept if pass test otherwise throw an error
 notify :: Homer -> KayleArgs -> Bool -> IO ()
