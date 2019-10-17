@@ -166,7 +166,7 @@ regMaintainer env = forever $ do
         outDatedCond :: RegisterItem -> TimeOfDay' -> Bool
         outDatedCond item current =
           regStatus item == unRegister_status &&
-          (current Time.- (Def.tod item) > 1)
+          (current Time.- (Def.tod item) > 180)
 
         filterOutDated :: TimeOfDay' -> RegisterBlock -> RegisterBlock
         filterOutDated current m = RegBlk $ Map.filter (not . isNeedClean current) (regBlk m)
