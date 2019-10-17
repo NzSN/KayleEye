@@ -64,8 +64,6 @@ import Time
 import Control.Concurrent
 import Control.Concurrent.STM
 
-import System.Systemd.Daemon
-
 type Kayle = ReaderT KayleEnv (LoggerT IO) Integer
 
 runKayle :: Kayle -> KayleEnv -> IO ()

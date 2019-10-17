@@ -51,7 +51,6 @@ dependencies:
 - text
 - mtl
 - HUnit
-- systemd
 - regex-tdfa
 - time
 - stm
