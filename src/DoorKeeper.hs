@@ -98,9 +98,11 @@ preparePhase h env = do
              >>= \answer -> print "Got Answer" >> return answer
              -- Giva an ack to Kayle
              >>= \answer -> (if isAnswerOK answer
-                              -- If register success then add the connection to maintain table
-                            then (sendLetter h $ ackAcceptLetter ident_) >> return ()
-                            else (sendLetter h $ ackRejectedLetter ident_) >> unRegister (ident_ ++ ":" ++ who) (newRoom))
+                            then (sendLetter h $ ackAcceptLetter ident_) >>
+                                 return ()
+                                 -- If register failed the channel should be unregistered
+                            else (sendLetter h $ ackRejectedLetter ident_)
+                                 >> unRegister (ident_ ++ ":" ++ who) (newRoom))
                             -- If the request is rejected by KayleHome then just return Nothing
                             -- to exit from the thread.
                             >> (bool (return Nothing) (return $ Just $ ProcInfo ident_ who newRoom h)
