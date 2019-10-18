@@ -304,11 +304,9 @@ registerProc :: Letter -> KayleEnv -> IO ()
 registerProc l env = do
   let subTest = retriFromContent l content_who
 
-  isRegistered <- if isNothing testArray
-                  then return False
-                  else maybe (return False) (doRegister e i) subTest
-
-  bool (return ()) (postRegister l env) isRegistered
+  if isNothing testArray
+    then return ()
+    else maybe (return ()) (doRegister e i) subTest
 
   where room = envRoom env
         regTable = envRegTbl env
@@ -333,15 +331,14 @@ registerProc l env = do
           if isExists
             then isUnRegister regTable e i sub
                  >>= bool
-                 (putLetter room rejectedAck >> return False)
+                 (putLetter room rejectedAck)
                  (Def.register regTable e i sub
-                  >> putLetter room acceptedAck
-                  >> return True)
+                  >> putLetter room acceptedAck)
             else getTimeNow
                  >>= (\tod -> Prelude.mapM_ (mapFunc tod) (fromJust testArray))
                  >> Def.register regTable e i sub
                  >> (putLetter room acceptedAck)
-                 >> return True
+                 >> postRegister l env
 
 unRegisterProc :: Letter -> KayleEnv -> IO ()
 unRegisterProc l env = do
