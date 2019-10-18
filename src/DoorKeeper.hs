@@ -44,7 +44,7 @@ doorKeeper env = do
   where dispatcher :: Socket -> IO ()
         dispatcher s =
           waitHomer s
-          >>= (\h -> forkIO $ job h)
+          >>= forkIO . job
           >> dispatcher s
 
         job h = Excep.handle handler_ (doorKeeperWork h env)
@@ -98,8 +98,8 @@ preparePhase h env = do
              >>= \answer -> print "Got Answer" >> return answer
              -- Giva an ack to Kayle
              >>= \answer -> (if isAnswerOK answer
-                            then (sendLetter h $ ackAcceptLetter ident_) >>
-                                 return ()
+                            then (sendLetter h $ ackAcceptLetter ident_)
+                                 >> return ()
                                  -- If register failed the channel should be unregistered
                             else (sendLetter h $ ackRejectedLetter ident_)
                                  >> unRegister (ident_ ++ ":" ++ who) (newRoom))
@@ -154,7 +154,7 @@ terminatedPhase l pInfo =
         termLetter who = terminatedLetter (ident l) who
 
 -- Get SeqId from another side
-preparePhase' :: Homer -> KayleArgs -> IO Bool
+
 preparePhase' h args =
   let ident_ = ident2Str $ Identity (proj args) (sha args) (event args)
       reql = reqLetter ident_ (target args)

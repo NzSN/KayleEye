@@ -9,6 +9,7 @@ import Homer
 import KayleBasics
 import KayleConst
 import Notifier
+import Puller
 
 import Data.Maybe
 import Control.Monad.Trans.Maybe
@@ -82,7 +83,9 @@ push_action success l env =
 
 merge_action :: Action
 merge_action success l env =
-  (accept (envMng env) (envCfg env) (envNotifier env) $ (Actions.iid l))
+  -- (accept (envMng env) (envCfg env) (envNotifier env) $ (Actions.iid l))
+  -- Have a request to Puller instead of accept directly
+  pullRequest (envPuller env) (Actions.iid l)
   >> send_test_content env l
   >> return k_ok
 

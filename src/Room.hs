@@ -48,10 +48,11 @@ register ident_ r = do
     -- Receiver exists, register failed
     then putMVar out_ map_ >> return Nothing
     -- No DuplexChannel is register with that identifier just register
-    else newChan >>= \chan ->
-                       let regedMap = insert ident_ chan map_
-                       in putMVar out_ regedMap
-                          >> (return $ Just $ Room (inEntry r) (outEntry r) (Just chan))
+    else newChan
+         >>= \chan ->
+               let regedMap = insert ident_ chan map_
+               in putMVar out_ regedMap
+                  >> (return $ Just $ Room (inEntry r) (outEntry r) (Just chan))
 
 -- Use by KayleHome
 getLetter :: Room -> IO Letter

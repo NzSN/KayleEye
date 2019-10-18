@@ -76,13 +76,23 @@ waitLetter h = do
 waitHomer :: Socket -> IO Homer
 waitHomer socket = do
   (connsock, _) <- accept socket
+
+  setSocketOption connsock KeepAlive 1
+  setSocketOption connsock tcp_keepidle 10
+  setSocketOption connsock tcp_keepintvl 1
+  setSocketOption connsock tcp_keepcnt 3
+
   handle <- socketToHandle connsock ReadWriteMode
   hSetBuffering handle LineBuffering
 
   return $ Homer handle
 
+  where tcp_keepidle = CustomSockOpt (6, 4)
+        tcp_keepintvl = CustomSockOpt (6, 5)
+        tcp_keepcnt = CustomSockOpt (6, 6)
+
 withGuard :: Ex.Exception e => (e -> IO Letter) -> IO Letter -> IO Letter
-withGuard handler io_l = Ex.handle handler io_l
+withGuard handler io_l = Ex.handle (\e -> print e >> handler e) io_l
 
 -- Test cases
 homerTest :: Test

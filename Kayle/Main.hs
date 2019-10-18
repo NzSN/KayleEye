@@ -72,6 +72,9 @@ doJudge' args configs = do
         (h1, _) <- solidTunnel h $ \homer -> notify homer args success
         -- Terminated the testing
         (h2, _) <- solidTunnel h1 $ \homer -> terminatePhase' ident_ homer args
+
+        releaseHomer h2
+
         -- Throw error if testing is failed
         throwError success
 
@@ -97,7 +100,7 @@ doJudge' args configs = do
 
     solidTunnel :: Homer -> (Homer -> IO a) -> IO (Homer, a)
     solidTunnel h f = do
-      Ex.handle (solidHandler f) $ (f h >>= \a -> return (h,a))
+      Ex.handle (\e -> print "Solid Tunnel" >> solidHandler f e) $ (f h >>= \a -> return (h,a))
 
     solidHandler f (SomeException e) = do
       -- Reconnect to KayleHome After connection builded just send request

@@ -34,7 +34,7 @@ databaseCreateStmt = "CREATE DATABASE kayleHome"
 tableCreateStmt :: String -- Table name
                 -> String
 tableCreateStmt tblN = "CREATE TABLE IF NOT EXISTS " ++ tblN ++ " (" ++
-                       "ident VARCHAR(50)," ++
+                       "ident VARCHAR(100)," ++
                        "content VARCHAR(255)," ++
                        "PRIMARY KEY(ident))"
 
@@ -42,7 +42,7 @@ tableCreateStmt tblN = "CREATE TABLE IF NOT EXISTS " ++ tblN ++ " (" ++
 -- which already in history table.
 memoTblCreateStmt :: String
 memoTblCreateStmt = "CREATE TABLE IF NOT EXISTS memo (" ++
-                    "ident VARCHAR(50)," ++
+                    "ident VARCHAR(100)," ++
                     "counter INT" ++
                     ") ENGINE=MEMORY"
 
@@ -80,8 +80,6 @@ boxInit key_ = do
   withRTSSignalsBlocked $ run conn (tableCreateStmt procTbl) [] >> return ()
   -- Create history table
   withRTSSignalsBlocked $ run conn (tableCreateStmt historyTbl) [] >> return ()
-  -- Memory table
-  withRTSSignalsBlocked $ run conn memoTblCreateStmt [] >> return ()
 
   commit conn
 

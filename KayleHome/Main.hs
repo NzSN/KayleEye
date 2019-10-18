@@ -95,7 +95,6 @@ main = do
   -- Create register table
   regTable <- newRegisterTbl
 
-  -- This locker is shared between puller and KayleHome
   let env = (KayleEnv configs manager args Empty_Homer bKey room puller regTable notifier)
 
   -- Spawn Puller thread
@@ -211,13 +210,13 @@ doKayle =
 
       case eType of
         -- OK
-        0 -> procLoop Empty_letter env
+        0 -> (liftIO . print $ "OK") >> procLoop Empty_letter env
         -- ERROR, just retry the letter with new box key.
-        1 -> (liftIO . waitKey_until $ (envCfg env))
+        1 -> (liftIO . print $ "ERROR") >> (liftIO . waitKey_until $ (envCfg env))
           >>= \x -> let env_new = kayleEnvSetBKey env x
                     in procLoop l env_new
 
-    procHandler = \_ -> return k_error :: IO Integer
+    procHandler = \e -> print e >>  return k_error :: IO Integer
     procLetter' l b e =
       doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e)
       >>= \retCode -> commitKey b >> return retCode
@@ -225,6 +224,7 @@ doKayle =
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
     procLetter letter bKey env = do
+      liftIO . print $ "procLetter"
       logKayle "Info" $ "Received Letter : " ++ (show letter)
       exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
       if not exists
