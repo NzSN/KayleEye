@@ -17,6 +17,7 @@ import Data.Maybe
 import Data.Bool
 import qualified Data.Map as Map
 import Network.Socket
+import System.IO
 import Control.Monad
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -68,7 +69,7 @@ doorKeeperWork h env = do
 preparePhase :: Homer -> KayleEnv -> IO (Maybe ProcInfo)
 preparePhase h env = do
   -- Waiting for the first request letter
-  l_req <- waitLetter h
+  l_req <- withGuard interruptHandler $ waitLetter h
 
   let subTest = retriFromContent l_req "who"
 
@@ -105,6 +106,9 @@ preparePhase h env = do
                             >> (bool (return Nothing) (return $ Just $ ProcInfo ident_ who newRoom h)
                                  $ isAnswerOK answer)
 
+        interruptHandler (SomeException e) =
+          hClose (Homer.handle h) >> fail "Connection interrupted"
+
         registerKey :: Letter -> Maybe String
         registerKey letter = retriFromContent letter "who"
                              >>= \who -> return $ (ident letter) ++ ":" ++ who
@@ -129,6 +133,7 @@ collectPhase pInfo = do
               room = procRoom pInfo
           in putLetter' room unregLetter
              >> unRegister (ident_ ++ ":" ++ subTest) room
+             >> hClose (Homer.handle (procHomer pInfo))
              >> fail "Connection interrupted"
 
 terminatedPhase :: Letter -> ProcInfo -> IO ()
@@ -136,7 +141,7 @@ terminatedPhase l pInfo =
   let subTestMaybe = retriFromContent l "who"
       room = (procRoom pInfo)
   in notifyKayle subTestMaybe
-     >> releaseHomer (procHomer pInfo)
+     >> (hClose $ Homer.handle (procHomer pInfo))
 
   where notifyKayle whoMaybe =
           maybe (return ())
