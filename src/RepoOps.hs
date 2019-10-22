@@ -72,7 +72,7 @@ rebase :: Manager -> Configs -> Notifier (String, String)
 rebase mng cfgs notifier iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
-      rebaseUrl_ = replaceAll acceptUrl [projId, iid, token]
+      rebaseUrl_ = replaceAll rebaseUrl [projId, iid, token]
   code <- put_req rebaseUrl_ mng
 
   case code of
