@@ -29,7 +29,7 @@ mapFunc' = \acc x -> acc ++ (fst x) ++ " -- " ++ (mapFunc . snd $ x) ++ "\n"
 
 commitMessage :: KayleEnv -> Letter -> IO String
 commitMessage env l = do
-  let sha = Prelude.last . identSplit . ident $ l
+  let sha = ident_sha . str2Ident . ident $ l
 
   message <- commitMsg (envMng env) (envCfg env) sha
   -- The letter must exists
