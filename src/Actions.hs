@@ -43,10 +43,13 @@ commitMessage env l = do
          in return $ message ++ "\n" ++ content'
 
 shaFromLetter :: Letter -> String
-shaFromLetter l = last . identSplit . ident $ l
+shaFromLetter = ident_sha . str2Ident . ident
+
+eventFromLetter :: Letter -> String
+eventFromLetter = ident_event . str2Ident . ident
 
 subject :: Letter -> String
-subject l = "CI Information on commit :" ++ (shaFromLetter l)
+subject l = "CI Information on commit : " ++ (shaFromLetter l) ++ (eventFromLetter l)
 
 iid :: Letter -> String
 iid l = let iidMaybe = retriFromHeader l "iid"
