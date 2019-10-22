@@ -49,7 +49,7 @@ eventFromLetter :: Letter -> String
 eventFromLetter = ident_event . str2Ident . ident
 
 subject :: Letter -> String
-subject l = "CI Information on commit : " ++ (shaFromLetter l) ++ (eventFromLetter l)
+subject l = "CI Information on commit " ++ "(" ++ (eventFromLetter l) ++ ")"  ++ " : " ++ (shaFromLetter l)
 
 iid :: Letter -> String
 iid l = let iidMaybe = retriFromHeader l "iid"
