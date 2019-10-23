@@ -29,6 +29,8 @@ import Network.Socket
 import Data.Map as Map
 import Data.Map.Merge.Strict
 
+import Data.Bool
+
 -- List
 import Data.List as List
 
@@ -44,6 +46,7 @@ import Data.Aeson
 import Database.HDBC
 
 -- Homer
+import Letter as L
 import Homer as H
 import LetterBox
 import KayleConst
@@ -51,11 +54,15 @@ import Logger
 import KayleBasics as K
 import RepoOps as R
 import Actions
-import KayleDefined
+import KayleDefined as Def
+import Puller
+import Room
+import Notifier
+import DoorKeeper
+import Time
 
 import Control.Concurrent
-
-import System.Systemd.Daemon
+import Control.Concurrent.STM
 
 type Kayle = ReaderT KayleEnv (LoggerT IO) Integer
 
@@ -70,9 +77,6 @@ main = do
   -- Configuration file loaded
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
-  print configs
-  let serverOpts = configGet configs serverInfoGet serverAddr_err_msg
-  homer <- pickHomer' (C.addr serverOpts) (C.port serverOpts)
 
   -- Box initialization
   let dbOpts = configGet configs databaseGet db_err_msg
@@ -81,8 +85,91 @@ main = do
   -- Database init, Create procTbl and historyTbl if not exists
   boxInit bKey
 
-  let env = (KayleEnv configs manager args homer bKey)
+  -- Build the room which supply a way to Kayle to communicate with doorkeeper
+  room <- newRoom
+
+  -- Create Notifier and Puller
+  notifier <- newNotifier configs
+  puller <- newPuller manager configs notifier
+
+  -- Create register table
+  regTable <- newRegisterTbl
+
+  let env = (KayleEnv configs manager args Empty_Homer bKey room puller regTable notifier)
+
+  -- Spawn Puller thread
+  forkIO $ pullerSpawn puller
+  -- Spawn Notifier thread
+  forkIO $ notifierSpawn notifier
+  -- Spawn Doorkeeper thread
+  forkIO $ doorKeeper env
+  -- Spawn Register Maintainer
+  forkIO $ regMaintainer env
+
   runKayle doKayle env
+
+-- Register Table Maintainer
+regMaintainer :: KayleEnv -> IO ()
+regMaintainer env = forever $ do
+  -- Current UTC time
+  current <- getTimeNow
+
+  -- Maintaining the register table
+  maintain tbl bKey current
+
+  showRegTable tbl
+
+  -- Sleep in a query interval
+  threadDelay queryInterval
+
+  where tbl = envRegTbl env
+        bKey = envKey env
+
+        queryInterval = minute_micro
+
+        -- Function to maintain register table
+        maintain :: RegisterTbl -> BoxKey -> TimeOfDay' -> IO ()
+        maintain rTbl bKey current = do
+          outdatedList <- atomically $ regTblClear rTbl current
+
+          -- Remove outdated item from letterBox
+          mapM_ (removeLetter bKey procTbl) outdatedList
+          commitKey bKey
+
+        regTblClear :: RegisterTbl -> TimeOfDay' -> STM [String]
+        regTblClear tbl' current = do
+          tbl_ <- readTVar $ regTbl tbl'
+          let itemsOutDated = Map.foldl (eventFold current) [] tbl_
+              cleanMap = Map.map (filterOutDated current) tbl_
+
+          -- Update register table
+          writeTVar (regTbl tbl') cleanMap
+
+          -- Return items which should be remove from letter box
+          return itemsOutDated
+
+        eventFold :: TimeOfDay' -> [String] -> RegisterBlock -> [String]
+        eventFold current acc x = acc ++ (Map.foldlWithKey (blockFold current) [] $ regBlk x)
+
+        blockFold :: TimeOfDay' -> [String] -> String -> RegisterItems -> [String]
+        blockFold current acc k x = if isNeedClean current x
+                            then [k] ++ acc
+                            else acc
+
+        -- Function to check is a items need clean
+        isNeedClean :: TimeOfDay' -> RegisterItems -> Bool
+        isNeedClean current items =
+          let itemArray = regItems items
+          in List.foldl (\acc x -> acc || outDatedCond x current) False itemArray
+
+        outDatedCond :: RegisterItem -> TimeOfDay' -> Bool
+        outDatedCond item current =
+          regStatus item == unRegister_status &&
+          (current Time.- (Def.tod item) > 180)
+
+        filterOutDated :: TimeOfDay' -> RegisterBlock -> RegisterBlock
+        filterOutDated current m = RegBlk $ Map.filter (not . isNeedClean current) (regBlk m)
+
 
 -- Append log message to Kayle
 logKayle h = lift . appendLogger h
@@ -96,29 +183,40 @@ waitKey_until c =
 doKayle :: Kayle
 doKayle =
   ask >>= \l -> procLoop Empty_letter l
-
   where
     procLoop :: Letter -> KayleEnv -> Kayle
     procLoop l env = do
       let homer = envHomer env
           bKey = envKey env
+          room = envRoom env
+
+      liftIO . print $ "Wait letter"
 
       letter <- if isEmptyLetter l
-                then liftIO . waitHomer $ homer
+                then liftIO . getLetter $ room
                 else return l
+
+      liftIO . print $ "Received Letter : " ++ (show letter)
+
+      -- Deal with control letter
+      if isControlEvent $ typeOfLetter letter
+        then (liftIO . controlProc letter $ env)
+             >> (liftIO . showRegTable $ (envRegTbl env))
+             >> procLoop Empty_letter env
+        else return 0
 
       -- fixme: should provide function to deal with different error type
       eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
 
       case eType of
         -- OK
-        0 -> procLoop Empty_letter env
+        0 -> (liftIO . print $ "OK") >> procLoop Empty_letter env
         -- ERROR, just retry the letter with new box key.
-        1 -> (liftIO . waitKey_until $ (envCfg env))
-          >>= \x -> let env_new = KayleEnv (envCfg env) (envMng env) (envArgs env) (envHomer env) x
+        1 -> (liftIO . print $ "ERROR") >> (liftIO . waitKey_until $ (envCfg env))
+          >>= \x -> let env_new = kayleEnvSetBKey env x
                     in procLoop l env_new
 
-    procHandler = \_ -> return k_error :: IO Integer
+    procHandler = \e -> print e >>  return k_error :: IO Integer
     procLetter' l b e =
       doLogger (runReaderT (procLetter l b e) e) (last $ envArgs e)
       >>= \retCode -> commitKey b >> return retCode
@@ -126,17 +224,15 @@ doKayle =
     -- Function to process new incomming letter
     procLetter :: Letter -> BoxKey -> KayleEnv -> Kayle
     procLetter letter bKey env = do
-        -- Logging the received letter
-        logKayle "Info" $ "Received Letter : " ++ (show letter)
-
-        exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
-        if not exists
-            then (liftIO . isLetterExists bKey procTbl $ (ident letter))
-                 >>= \exists -> if not exists
-                                then newLetter letter env
-                                else inProcLetter letter env
-            else (logKayle "Info" "Letter is already in history table")
-                 >> (action' True letter $ env)
+      liftIO . print $ "procLetter"
+      logKayle "Info" $ "Received Letter : " ++ (show letter)
+      exists <- liftIO . isLetterExists bKey historyTbl $ (ident letter)
+      if not exists
+        then (liftIO . isLetterExists bKey procTbl $ (ident letter))
+             >>= \exists -> if not exists
+                            then newLetter letter env
+                            else inProcLetter letter env
+        else action' True letter $ env
 
     -- Function to deal with the first arrived letter of a project
     newLetter :: Letter -> KayleEnv -> Kayle
@@ -183,19 +279,129 @@ doKayle =
                 -> Letter -- The letter from box
                 -> KayleEnv -> Kayle
     inProcDo rl bl env =
-        let content = H.content rl
+        let content = L.content rl
             -- Update the letter from box
         in (return $ letterUpdate' bl [(k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
             -- Put the letter from box back to box
             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
-                    (liftIO . updateLetter (envKey env) (H.ident x) (encode $ H.content x) $ isTestFinished x)
-                    >>= \y -> return (y, x))
+                    (liftIO . updateLetter (envKey env) (L.ident x) (encode $ L.content x) $ isTestFinished x))
             -- To check that whether the test describe by the letter is done
-            >>= (\(code, letter) -> if code == 1
-                         then if isTestSuccess letter
-                           then logKayle "Info" "Accpet Letter" >> action True rl env
-                           else action False rl env
+            >>= (\x -> if x == 1
+                         then if isTestSuccess rl
+                              then logKayle "Info" "Accpet Letter" >> action True rl env
+                              else action False rl env
                          else return k_ok)
+
+controlProc :: Letter -> KayleEnv -> IO ()
+controlProc l env =
+  let proc = case typeOfLetter l of
+               "register"   -> return $ registerProc
+               "unRegister" -> return $ unRegisterProc
+               "terminated" -> return $ terminatedProc
+  in maybe (return ()) (\proc -> proc l env) proc
+
+registerProc :: Letter -> KayleEnv -> IO ()
+registerProc l env = do
+  let subTest = retriFromContent l content_who
+
+  if isNothing testArray
+    then return ()
+    else maybe (return ()) (doRegister e i) subTest
+
+  where room = envRoom env
+        regTable = envRegTbl env
+
+        -- Get the test set which the letter belong to
+        testSet = testPiecesGet (ident_name identity) (envCfg env)
+        testArray = Map.lookup (ident_name identity) $ testContent $ fromJust testSet
+
+        identity = str2Ident (ident l)
+        e = ident_event identity
+        i = ident l
+
+        mapFunc tod sub = addItem' regTable e i $ RegItem sub unRegister_status tod
+
+        rejectedAck = answerRejected_Letter (identWithSubTest l)
+        acceptedAck = answerAccepted_Letter (identWithSubTest l)
+
+        -- Register processing function
+        doRegister e i sub = do
+          isExists <- isItemExists regTable e i sub
+
+          if isExists
+            then isUnRegister regTable e i sub
+                 >>= bool
+                 (putLetter room rejectedAck)
+                 (Def.register regTable e i sub
+                  >> putLetter room acceptedAck)
+            else getTimeNow
+                 >>= (\tod -> Prelude.mapM_ (mapFunc tod) (fromJust testArray))
+                 >> Def.register regTable e i sub
+                 >> (putLetter room acceptedAck)
+                 >> postRegister l env
+
+unRegisterProc :: Letter -> KayleEnv -> IO ()
+unRegisterProc l env = do
+  let identity = str2Ident (ident l)
+      e = ident_event identity
+      i = ident l
+      subTest = retriFromContent l content_who
+
+  maybe (return ()) (doUnRegister e i) subTest
+
+  where room = envRoom env
+        regTable = envRegTbl env
+
+        doUnRegister e i sub = do
+          isExists <- isItemExists regTable e i sub
+
+          if isExists
+            then Def.unregister regTable e i sub
+            else return ()
+
+terminatedProc :: Letter -> KayleEnv -> IO ()
+terminatedProc l env =
+  let sub = fromMaybe "" subMay
+  in markFinished rTbl e i sub
+     >> getItems rTbl e i
+     >>= \items -> let itemArray = fromMaybe (RegItems []) items
+                   in if isItemsDone itemArray
+                      then removeItems rTbl e i >> postTerminated l env
+                      else return ()
+  where
+        rTbl = envRegTbl env
+        e = ident_event identity
+        i = ident l
+        subMay = retriFromContent l content_who
+        identity = str2Ident (ident l)
+
+        isItemsDone items =
+          let itemArray = regItems items
+          in List.foldl (\acc x -> acc && (regStatus x == finished_status)) True itemArray
+
+postRegister :: Letter -> KayleEnv -> IO ()
+postRegister l env =
+  let proc = case typeOfLetter' l of
+               "merge_request" -> return $ mergePostRegister
+               "push"          -> return $ pushPostRegister
+               "daily"         -> return $ dailyPostRegister
+  in maybe (return ()) (\proc -> proc l env) proc
+
+  where mergePostRegister l env = return ()
+        pushPostRegister l env = return ()
+        dailyPostRegister l env = lock (envPuller env)
+
+postTerminated :: Letter -> KayleEnv -> IO ()
+postTerminated l env =
+  let proc = case typeOfLetter' l of
+               "merge_request" -> return $ mergePostTerminated
+               "push"          -> return $ pushPostTerminated
+               "daily"         -> return $ dailyPostTerminated
+  in maybe (return ()) (\proc -> proc l env) proc
+
+  where mergePostTerminated l env = return ()
+        pushPostTerminated l env = return ()
+        dailyPostTerminated l env = unlock (envPuller env)
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle

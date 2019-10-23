@@ -1,12 +1,15 @@
-{--# Overloadedstrings  #--}
+{-# LANGUAGE OverloadedStrings  #-}
 
 module Actions where
 
-import KayleDefined
+import KayleDefined as K
 import LetterBox
+import Letter
 import Homer
 import KayleBasics
 import KayleConst
+import Notifier
+import Puller
 
 import Data.Maybe
 import Control.Monad.Trans.Maybe
@@ -26,7 +29,7 @@ mapFunc' = \acc x -> acc ++ (fst x) ++ " -- " ++ (mapFunc . snd $ x) ++ "\n"
 
 commitMessage :: KayleEnv -> Letter -> IO String
 commitMessage env l = do
-  let sha = Prelude.last . identSplit . ident $ l
+  let sha = ident_sha . str2Ident . ident $ l
 
   message <- commitMsg (envMng env) (envCfg env) sha
   -- The letter must exists
@@ -40,10 +43,13 @@ commitMessage env l = do
          in return $ message ++ "\n" ++ content'
 
 shaFromLetter :: Letter -> String
-shaFromLetter l = last . identSplit . ident $ l
+shaFromLetter = ident_sha . str2Ident . ident
+
+eventFromLetter :: Letter -> String
+eventFromLetter = ident_event . str2Ident . ident
 
 subject :: Letter -> String
-subject l = "CI Information on commit :" ++ (shaFromLetter l)
+subject l = "CI Information on commit " ++ "(" ++ (eventFromLetter l) ++ ")"  ++ " : " ++ (shaFromLetter l)
 
 iid :: Letter -> String
 iid l = let iidMaybe = retriFromHeader l "iid"
@@ -54,7 +60,7 @@ iid l = let iidMaybe = retriFromHeader l "iid"
 send_test_content :: KayleEnv -> Letter -> IO ()
 send_test_content e l =
   (commitMessage e $ l)
-  >>= (\body -> notify (cs body) (subject l) $ (envCfg e))
+  >>= (\body -> notifyViaEmail (envNotifier e) (subject l) body)
 
 -- Action selector during the letter is new
 actionSelector :: String -> Action
@@ -68,10 +74,10 @@ daily_action :: Action
 daily_action success l env =
   (commitMessage env $ l)
   >>= (\x -> if success
-            then notify (cs x) (subject l) $ (envCfg env)
+            then notifyViaEmail (envNotifier env) (subject l) x
             else (yesterday'sMR (envMng env) $ (envCfg env))
-                 >>= \mrs_today ->
-                       notify (cs (x ++ mrs_today)) (subject l) $ (envCfg env))
+                 >>= (\mrs_today ->
+                       notifyViaEmail (envNotifier env) (subject l) (x ++ mrs_today)))
   >> return k_ok
 
 push_action :: Action
@@ -80,10 +86,11 @@ push_action success l env =
 
 merge_action :: Action
 merge_action success l env =
-  let accept' = if success
-                then accept (envMng env) (envCfg env) $ (iid l)
-                else return ()
-  in accept' >> send_test_content env l >> return k_ok
+  -- (accept (envMng env) (envCfg env) (envNotifier env) $ (Actions.iid l))
+  -- Have a request to Puller instead of accept directly
+  pullRequest (envPuller env) (Actions.iid l)
+  >> send_test_content env l
+  >> return k_ok
 
 -- Action selector during the letter already in history table.
 actionSelector' :: String -> Action

@@ -28,6 +28,7 @@ import System.Process as Process
 
 import Control.Concurrent.Thread.Delay
 
+import Letter as L
 import Homer as H
 import Data.Map as Map
 
@@ -46,13 +47,13 @@ letterInit cfgs l = do
     then Nothing
     else let workContent = fromJust workContent_m
          in return $ Letter (ident l) (header l) $ fromList
-            [ letterContentItem x (H.content l) |  x <- workContent ]
+            [ letterContentItem x (L.content l) |  x <- workContent ]
   where
     -- Contents of all testing projects
     tProjs = configGet cfgs (testPiecesGet (ident l)) test_proj_err_msg
     tContents = testContent tProjs
     -- All keys of content of letter
-    allKeys = keys $ H.content l
+    allKeys = keys $ L.content l
     -- Item generator for content of new letter
     letterContentItem key content =
         if elem key allKeys
@@ -100,31 +101,6 @@ get_req url mng = do
   return $ (statusCode $ responseStatus response, (cs $ responseBody response))
 
 
--- Notify via email
--- fixme: pass user as argument of this function
-notify :: Lazy.Text -> String -> Configs -> IO ()
-notify content sub cfgs = do
-  let mailInfo = fromJust $ emailInfoGet $ cfgs
-      hostName = Config.host mailInfo
-      user = Config.user mailInfo
-      pass = Config.pass mailInfo
-
-      adminEmail = (cs $ adminEmailAddr addr) :: Internal.Text
-
-  let from = Address Nothing ((cs user) :: Internal.Text)
-      to   = [Address (Just "admin") adminEmail]
-      cc   = []
-      bcc  = []
-      subject = (cs sub)
-      body    = plainTextPart content
-
-  let mail = simpleMail from to cc bcc subject [body]
-  sendMailWithLogin hostName user pass mail
-
-  where addr = case adminEmailGet $ cfgs of
-          Nothing   -> error "Admin email address not found in configuration file"
-          Just addr -> addr
-
 -- Run shell command with args
 run_command :: String -> [String] -> IO Bool
 run_command cmd args = do
@@ -155,12 +131,3 @@ replaceAll "" (y:ys) = ""
 replaceAll "" [] = ""
 
 -- Search option from Configs
-configGet :: Configs -> (Configs -> Maybe a) -> String -> a
-configGet cfgs f errMsg = case f cfgs of
-                     Nothing  -> error errMsg
-                     Just opt -> opt
-cGetServer :: Configs -> ServerInfo_cfg
-cGetServer c = configGet c serverInfoGet serverAddr_err_msg
-
-cGetCmds :: Configs -> TestContent_cfg
-cGetCmds c = configGet c testCmdGet test_cmd_err_msg

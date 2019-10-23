@@ -17,6 +17,9 @@ import Data.Either
 import Debug.Trace (trace)
 import System.IO
 
+import KayleConst
+import Time
+
 data Configs = Configs_M { configMap :: Map String Configs }
               | Configs_L { configList :: [Configs] }
               | Configs_P { configPair :: (Configs, Configs) }
@@ -32,6 +35,9 @@ data Projects_cfg = ProjectsConfig_cfg { projName :: String, projID :: String } 
 data TestProject_cfg = TestProject_cfg { testContent :: Map String [String] } deriving Show
 data EmailInfo_cfg = EmailInfo_cfg { host :: String, user :: String, pass :: String } deriving Show
 data AdminEmailAddr_cfg = AdminEmailAddr_cfg { adminEmailAddr :: String } deriving Show
+data ExtraEmail_cfg = ExtraEmail_cfg { extraEmails :: [String] } deriving Show
+data NotifyTime_cfg = NotifyTime_cfg { notifyTime :: (TimeOfDay', TimeOfDay') } deriving Show
+data PullTime_cfg = PullTime_cfg { pullTime :: (TimeOfDay', TimeOfDay')} deriving Show
 data AcceptApi_cfg = AcceptApi_cfg { a_api :: String } deriving Show
 data RebaseApi_cfg = RebaseApi_cfg { r_api :: String } deriving Show
 data TestContent_cfg = TestContent_cfg { content :: [(String, String)] } | TestContent_None deriving Show
@@ -78,7 +84,11 @@ optHead = do
          try (string "TestProject")   <|>
          try (string "Database")      <|>
          try (string "ServerAddr")    <|>
-         (string "AdminEmail")
+         try (string "AdminEmail")    <|>
+         try (string "ExtraEmails")   <|>
+         try (string "NotifyTime")    <|>
+         try (string "PullTime")
+
   return def
 
 optDefSeperate :: GenParser Char st String
@@ -267,6 +277,37 @@ priTokenGet :: Configs -> Maybe PrivToken_cfg
 priTokenGet opts = configRetrive opts "PrivateToken"
   (\(Configs_L cfg) -> PrivToken_cfg (configVal $ head cfg))
 
+extraEmailsGet :: Configs -> Maybe ExtraEmail_cfg
+extraEmailsGet opts = configRetrive opts "ExtraEmails"
+  (\(Configs_L cfg) -> ExtraEmail_cfg (map configVal cfg))
+
+notifyTimeGet :: Configs -> Maybe NotifyTime_cfg
+notifyTimeGet opts = configRetrive opts "NotifyTime"
+  (\(Configs_L cfg) ->
+     let p = configPair (head cfg)
+         begin = configVal . fst $ p
+         end   = configVal . snd $ p
+     in NotifyTime_cfg (strToLocalTime begin, strToLocalTime end))
+
+pullTimeGet :: Configs -> Maybe PullTime_cfg
+pullTimeGet opts = configRetrive opts "PullTime"
+  (\(Configs_L cfg) ->
+     let p = configPair (head cfg)
+         begin = configVal . fst $ p
+         end   = configVal . snd $ p
+     in PullTime_cfg (strToLocalTime begin, strToLocalTime end))
+
+
+configGet :: Configs -> (Configs -> Maybe a) -> String -> a
+configGet cfgs f errMsg = case f cfgs of
+                     Nothing  -> error errMsg
+                     Just opt -> opt
+cGetServer :: Configs -> ServerInfo_cfg
+cGetServer c = configGet c serverInfoGet serverAddr_err_msg
+
+cGetCmds :: Configs -> TestContent_cfg
+cGetCmds c = configGet c testCmdGet test_cmd_err_msg
+
 -- Test cases
 parserTest :: Test
 parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
@@ -277,7 +318,6 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       contents <- hGetContents file
 
       let config = fromRight Configs_Empty $ parseConfig contents
-      print config
 
       -- Admin Email
       let aEmail = fromJust $ adminEmailGet config
@@ -311,5 +351,5 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       assertEqual "Token" "12345678" (priToken pToken)
 
       let cmd = fromJust $ testCmdGet config
-      print cmd
+      return ()
       -- assertEqual "TestCmd" ["@RebuildAll", ".\\GBN\\src\\clear_gpon.bat"] (content cmd)
