@@ -62,7 +62,7 @@ accept mng cfgs notifier iid = do
     -- Merge request not found or the url is wrong
     404 -> notifyViaEmail notifier "Failed to accept" "Merge requests not found or the url is wrong"
     -- Success
-    200 -> return ()
+    200 -> print "accept success" >> return ()
     _   -> notifyViaEmail notifier "Failed to accept" $ "Error : " ++ (show code)
 
 -- Rebase merge request to target branch
@@ -83,7 +83,7 @@ rebase mng cfgs notifier iid = do
     -- Merge request not found or the url is wrong
     404 -> notifyViaEmail notifier "Failed to rebase" ("Merge requests(" ++ iid ++ ") not found or the url is wrong")
     -- Success
-    202 -> return ()
+    202 -> print "rebase success" >> return ()
     _   -> notifyViaEmail notifier "Failed to rebase" $ "Error : " ++ (show code)
 
 -- Commit Message
