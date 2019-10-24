@@ -60,17 +60,21 @@ pullerSpawn p = forever $ do
       endTime   = snd $ pullTime interval
 
   iid <- readChan reqQ
+  print $ "Pull request " ++ iid ++ " arrived"
 
   now <- getTimeNow
   if isTimeInInterval now beginTime endTime
     -- If Current time is in the interval present in configuration
     -- just accept the merge requests
-    then lock p
+    then print "Try Pulling"
+         >> lock p
+         >> print "Pulling"
          >> accept manager_ configs notifier_ iid
          >> unlock p
     -- If Current time is not in the interval present in configuration
     -- then wait until in the interval
-    else (threadDelay $ (beginTime Time.- now) * minute_micro)
+    else print "Wait until in interval to pulling"
+         >> (threadDelay $ (beginTime Time.- now) * minute_micro)
          >> lock p
          >> accept manager_ configs notifier_ iid
          >> unlock p
