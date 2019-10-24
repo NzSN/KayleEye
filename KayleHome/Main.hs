@@ -214,7 +214,7 @@ doKayle =
         -- ERROR, just retry the letter with new box key.
         1 -> (liftIO . print $ "ERROR") >> (liftIO . waitKey_until $ (envCfg env))
           >>= \x -> let env_new = kayleEnvSetBKey env x
-                    in procLoop l env_new
+                    in procLoop letter env_new
 
     procHandler = \e -> print e >>  return k_error :: IO Integer
     procLetter' l b e =
