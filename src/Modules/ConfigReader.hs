@@ -7,10 +7,15 @@ import Text.Parsec.Expr
 import Text.Parsec.Token
 import Text.Parsec.Language
 
-import Data.Map as Map (Map, fromList, empty, lookup, toList)
+import Data.Map as Map (Map, fromList, empty, lookup, toList, insert)
 import Data.Map.Merge.Strict
 import Data.Maybe
 import Data.List.Split
+
+import Data.String.Conversions
+import Data.ByteString.Internal
+
+import Encrypt
 
 import Test.HUnit
 import Data.Either
@@ -24,7 +29,17 @@ data Configs = Configs_M { configMap :: Map String Configs }
               | Configs_L { configList :: [Configs] }
               | Configs_P { configPair :: (Configs, Configs) }
               | Configs_Str { configVal :: [Char] }
+              | Configs_Cipher { configCipher :: [Char] }
               | Configs_Empty deriving Show
+
+configVal' (Configs_Str plain) = plain
+configVal' (Configs_Cipher cipher) = cipher
+
+configCipher' :: String -> Configs -> String
+configCipher' key (Configs_Str plain) = plain
+configCipher' key (Configs_Cipher cipher) =
+  let cipher' = read $ '"' : cipher ++ "\"" :: ByteString
+  in cs $ decrypt RC4 (cs key :: ByteString) (cs cipher' :: ByteString)
 
 isEmpty :: Configs -> Bool
 isEmpty Configs_Empty = True
@@ -123,6 +138,9 @@ optDefs = do
     Configs_P p -> return $ if not $ isEmpty xs
                             then Configs_L $ x:(configList xs)
                             else Configs_L $ x:[]
+    Configs_Cipher cipher -> return $ if not $ isEmpty xs
+                                      then Configs_L (x:(configList xs))
+                                      else Configs_L (x:[])
   where
     -- Map merge
     merge1 m1 m2 = merge
@@ -140,9 +158,7 @@ defStmt = do
   return ret
 
 defObj :: GenParser Char st Configs
-defObj = do
-  str <- myString
-  return $ Configs_Str str
+defObj = try defCipher <|> defPlain
 
 defArray :: GenParser Char st Configs
 defArray = do
@@ -181,6 +197,19 @@ defPair = do
   right <- myString
   char ')'
   return $ Configs_P (Configs_Str left, Configs_Str right)
+
+defCipher :: GenParser Char st Configs
+defCipher = do
+  string "Cipher"
+  char '('
+  cipher <- myString
+  char ')'
+  return $ Configs_Cipher cipher
+
+defPlain :: GenParser Char st Configs
+defPlain = do
+  str <- myString
+  return $ Configs_Str str
 
 eol :: GenParser Char st Char
 eol = try (char '\n') <|>
@@ -221,13 +250,13 @@ listProjConfig opts = do
   if isNothing prjs
     then Nothing
     else let prj_ = configPair . head . configList . fromJust $ prjs
-         in return $ ProjectsConfig_cfg (configVal . fst $ prj_) (configVal . snd $ prj_)
+         in return $ ProjectsConfig_cfg (configVal' . fst $ prj_) (configVal' . snd $ prj_)
   where prjs = searchConfig "Projects" opts
 
 isProjExists :: String -> Configs -> Bool
 isProjExists prjName opts = if isNothing prjs
                                then False
-                               else elem True [ (configVal x) == prjName | x <- (configList $ fromJust $ prjs) ]
+                               else elem True [ (configVal' x) == prjName | x <- (configList $ fromJust $ prjs) ]
   where prjs = searchConfig "Projects" opts
 
 configRetrive :: Configs -> String -> (Configs -> b) -> Maybe b
@@ -240,63 +269,79 @@ configRetrive opts optName f = do
 
 mrAcceptApiConfig :: Configs -> Maybe AcceptApi_cfg
 mrAcceptApiConfig opts = configRetrive opts "MRAcceptApi"
-                         (\cfg -> AcceptApi_cfg $ configVal $ head $ configList $ cfg)
+                         (\cfg -> AcceptApi_cfg $ configVal' $ head $ configList $ cfg)
 
 mrRebaseApiConfig :: Configs -> Maybe RebaseApi_cfg
 mrRebaseApiConfig opts = configRetrive opts "MRRebaseApi"
-                         (\cfg -> RebaseApi_cfg $ configVal $ head $ configList cfg)
+                         (\cfg -> RebaseApi_cfg $ configVal' $ head $ configList cfg)
 
 emailInfoGet :: Configs -> Maybe EmailInfo_cfg
-emailInfoGet opts = configRetrive opts "Email"
-  (\(Configs_L cfg_l) -> EmailInfo_cfg (configVal $ head cfg_l) (configVal $ head . tail $ cfg_l) (configVal $ last cfg_l))
+emailInfoGet opts =
+  let key = encryptKeyGet opts
+  in configRetrive opts "Email" $
+     \(Configs_L cfg_l) -> EmailInfo_cfg
+                           (configVal' $ cfg_l !! 0)
+                           (configVal' $ cfg_l !! 1)
+                           (configCipher' key $ cfg_l !! 2)
 
 adminEmailGet :: Configs -> Maybe AdminEmailAddr_cfg
-adminEmailGet opts = configRetrive opts "AdminEmail" (\(Configs_L cfg) -> AdminEmailAddr_cfg $ configVal $ head cfg)
+adminEmailGet opts = configRetrive opts "AdminEmail"
+  (\(Configs_L cfg) -> AdminEmailAddr_cfg $ configVal' $ head cfg)
 
 testCmdGet :: Configs -> Maybe TestContent_cfg
 testCmdGet opts = configRetrive opts "TestCmd"
                   (\(Configs_L cfg) -> TestContent_cfg $ [ toStringPair $ configPair x | x <- cfg])
-  where toStringPair p = (configVal $ fst p, configVal $ snd p)
+  where toStringPair p = (configVal' $ fst p, configVal' $ snd p)
 testPiecesGet :: String -> Configs -> Maybe TestProject_cfg
 testPiecesGet projName opts = configRetrive opts "TestProject" getContent
   where getContent (Configs_M m) =  TestProject_cfg $ fromList [ (x, cValsToStrs y)| (x, Configs_L y) <- toList m]
-        cValsToStrs cVals = [ configVal cv | cv <- cVals]
+        cValsToStrs cVals = [ configVal' cv | cv <- cVals]
 
 databaseGet :: Configs -> Maybe DatabaseInfo_cfg
-databaseGet opts = configRetrive opts "Database"
-  (\(Configs_L cfg) -> DatabaseInfo_cfg (configVal $ head cfg)
-                       (configVal $ head . tail $ cfg)
-                       (configVal $ head . tail . tail $ cfg)
-                       (configVal $ last cfg))
+databaseGet opts =
+  let key = encryptKeyGet opts
+  in configRetrive opts "Database" $
+     \(Configs_L cfg) -> DatabaseInfo_cfg (configVal' $ cfg !! 0)
+                          (configVal' $ cfg !! 1)
+                          (configCipher' key $ cfg !! 2)
+                          (configVal' $ cfg !! 3)
 
 serverInfoGet :: Configs -> Maybe ServerInfo_cfg
 serverInfoGet opts = configRetrive opts "ServerAddr"
-  (\(Configs_L cfg) -> ServerInfo_cfg (configVal $ head cfg) (configVal $ last cfg))
+  (\(Configs_L cfg) -> ServerInfo_cfg (configVal' $ head cfg) (configVal' $ last cfg))
 
 priTokenGet :: Configs -> Maybe PrivToken_cfg
-priTokenGet opts = configRetrive opts "PrivateToken"
-  (\(Configs_L cfg) -> PrivToken_cfg (configVal $ head cfg))
+priTokenGet opts =
+  let key = encryptKeyGet opts
+  in configRetrive opts "PrivateToken" $
+     \(Configs_L cfg) -> PrivToken_cfg (configCipher' key $ head cfg)
 
 extraEmailsGet :: Configs -> Maybe ExtraEmail_cfg
 extraEmailsGet opts = configRetrive opts "ExtraEmails"
-  (\(Configs_L cfg) -> ExtraEmail_cfg (map configVal cfg))
+  (\(Configs_L cfg) -> ExtraEmail_cfg (map configVal' cfg))
 
 notifyTimeGet :: Configs -> Maybe NotifyTime_cfg
 notifyTimeGet opts = configRetrive opts "NotifyTime"
   (\(Configs_L cfg) ->
      let p = configPair (head cfg)
-         begin = configVal . fst $ p
-         end   = configVal . snd $ p
+         begin = configVal' . fst $ p
+         end   = configVal' . snd $ p
      in NotifyTime_cfg (strToLocalTime begin, strToLocalTime end))
 
 pullTimeGet :: Configs -> Maybe PullTime_cfg
 pullTimeGet opts = configRetrive opts "PullTime"
   (\(Configs_L cfg) ->
      let p = configPair (head cfg)
-         begin = configVal . fst $ p
-         end   = configVal . snd $ p
+         begin = configVal' . fst $ p
+         end   = configVal' . snd $ p
      in PullTime_cfg (strToLocalTime begin, strToLocalTime end))
 
+encryptKeyGet :: Configs -> String
+encryptKeyGet opts =
+  let key = configRetrive opts "EncryptKey" $ \(Configs_Str key) -> key
+  in if isNothing key
+     then ""
+     else fromJust key
 
 configGet :: Configs -> (Configs -> Maybe a) -> String -> a
 configGet cfgs f errMsg = case f cfgs of
@@ -317,7 +362,12 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       file <- openFile ("./config.txt") ReadMode
       contents <- hGetContents file
 
-      let config = fromRight Configs_Empty $ parseConfig contents
+      let config' = fromRight Configs_Empty $ parseConfig contents
+          cfgMap = configMap config'
+          encryptKey = "1234567890"
+          config = Configs_M $ insert "EncryptKey" (Configs_Str encryptKey) cfgMap
+
+      print config
 
       -- Admin Email
       let aEmail = fromJust $ adminEmailGet config

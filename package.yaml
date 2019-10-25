@@ -54,6 +54,7 @@ dependencies:
 - regex-tdfa
 - time
 - stm
+- cryptonite
 
 library:
   source-dirs: src

@@ -114,7 +114,6 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
           forkIO $ do
             homer <- waitHomer sock
             l <- waitLetter homer
-            print l
 
             sendLetter homer l
 
@@ -124,10 +123,8 @@ homerTest = TestList [TestLabel "Send and recv" (TestCase homerAssert),
           forkIO $ do
             homer <- pickHomer "127.0.0.1" "8013"
             sendLetter homer l
-            print "Sended"
 
             rl <- waitLetter homer
-            print $ "Client Receive :" ++ (show rl)
 
             putMVar m2 ()
 

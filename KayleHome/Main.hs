@@ -63,6 +63,7 @@ import Time
 
 import Control.Concurrent
 import Control.Concurrent.STM
+import System.IO
 
 type Kayle = ReaderT KayleEnv (LoggerT IO) Integer
 
@@ -78,8 +79,15 @@ main = do
   args <- getArgs
   configs <- loadConfig (Prelude.head args) (head . tail $ args)
 
+  -- Get Encrypt key from Standard input
+  -- and add to configs so cipher in configs
+  -- can be decrypt
+  encryptKey <- getLine
+  let cfgMap = configMap configs
+      configs' = Configs_M $ Map.insert "EncryptKey" (Configs_Str encryptKey) cfgMap
+
   -- Box initialization
-  let dbOpts = configGet configs databaseGet db_err_msg
+  let dbOpts = configGet configs' databaseGet db_err_msg
   bKey <- boxKeyCreate (C.db_host dbOpts) (C.db_user dbOpts) (C.db_pass dbOpts) (C.db dbOpts)
 
   -- Database init, Create procTbl and historyTbl if not exists
@@ -89,13 +97,13 @@ main = do
   room <- newRoom
 
   -- Create Notifier and Puller
-  notifier <- newNotifier configs
-  puller <- newPuller manager configs notifier
+  notifier <- newNotifier configs'
+  puller <- newPuller manager configs' notifier
 
   -- Create register table
   regTable <- newRegisterTbl
 
-  let env = (KayleEnv configs manager args Empty_Homer bKey room puller regTable notifier)
+  let env = (KayleEnv configs' manager args Empty_Homer bKey room puller regTable notifier)
 
   -- Spawn Puller thread
   forkIO $ pullerSpawn puller
