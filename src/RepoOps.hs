@@ -52,7 +52,10 @@ accept mng cfgs notifier iid = do
            ("Merge request " ++ iid ++ " is unable to be accepted")
     -- If it has some conflicts and can not be merged - you’ll get a 406 and
     -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs notifier iid >> delay (3 * seconds_micro) >> print "fixme"
+    406 -> rebase mng cfgs notifier iid >> delay (3 * seconds_micro)
+           -- try accept after rebase if rebase success accept should be success too
+           -- otherwise a message will be notified in rebase function.
+           >> (put_req acceptUrl_ mng >> return ())
     -- If the sha parameter is passed and does not match the HEAD of the source -
     -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
     409 -> notifyViaEmail notifier "Failed to accept"
