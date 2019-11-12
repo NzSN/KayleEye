@@ -288,14 +288,15 @@ doKayle =
                 -> KayleEnv -> Kayle
     inProcDo rl bl env =
         let content = L.content rl
+            lUpdated = letterUpdate' bl [(k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl]
             -- Update the letter from box
-        in (return $ letterUpdate' bl [(k, fromJust $ Map.lookup k content) | k <- allKeysOfContent rl])
+        in (return $ lUpdated)
             -- Put the letter from box back to box
             >>= (\x -> logKayle "Info" ("Update letter : " ++ (show x)) >>
                     (liftIO . updateLetter (envKey env) (L.ident x) (encode $ L.content x) $ isTestFinished x))
             -- To check that whether the test describe by the letter is done
             >>= (\x -> if x == 1
-                         then if isTestSuccess rl
+                         then if isTestSuccess lUpdated
                               then logKayle "Info" "Accpet Letter" >> action True rl env
                               else action False rl env
                          else return k_ok)
