@@ -47,20 +47,30 @@ pullRequest p iid =
 
 pullerSpawn :: Puller -> IO ()
 pullerSpawn p = forever $ do
-  let locker_ = locker p
-      reqQ    = requests p
-
-      manager_ = manager p
-      configs = config p
-      notifier_ = notifier p
-
-      interval = configGet configs pullTimeGet "Pull time is not configured"
-
-      beginTime = fst $ pullTime interval
-      endTime   = snd $ pullTime interval
+  let reqQ = requests p
 
   iid <- readChan reqQ
   print $ "Pull request " ++ iid ++ " arrived"
+
+  if pullCond p iid
+    then doPulling p iid
+    else return ()
+
+  where
+    -- True if this merge request is able to processed.
+    pullCond :: Puller -> String -> Bool
+    pullCond p iid = True
+
+doPulling :: Puller -> String -> IO ()
+doPulling p iid = do
+  let configs = config p
+      interval = configGet configs pullTimeGet "Pull time is not configured"
+
+      manager_ = manager p
+      notifier_ = notifier p
+
+      beginTime = fst $ pullTime interval
+      endTime   = snd $ pullTime interval
 
   now <- getTimeNow
   if isTimeInInterval now beginTime endTime
