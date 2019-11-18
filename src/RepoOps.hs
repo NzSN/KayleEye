@@ -2,6 +2,8 @@ module RepoOps where
 
 {-# LANGUAGE OverloadedStrings #-}
 
+import Test.HUnit
+
 import Data.Aeson
 import Data.Aeson.Types
 
@@ -28,11 +30,15 @@ import Data.Time.Calendar
 
 import Notifier
 
+import GitLab
+import GitLab.Types
+import GitLab.API.Projects
+
 acceptUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
 rebaseUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/rebase?private_token=*"
 commitsUrl = "http://gpon.git.com:8011/api/v4/projects/*/repository/commits/*?private_token=*"
 mergesUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests?private_token=*"
-
+singleMRUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*?private_token=*"
 
 -- Accept an merge request into main branch
 accept :: Manager -> Configs -> Notifier (String, String)
@@ -110,6 +116,37 @@ commitMsg m cfg sha = do
         else fromJust $ flip parseMaybe (fromJust o) $ \obj -> do
                msg <- obj .: cs "message"
                return msg
+
+-- Merge Request info
+data MergeRequestInfo = MRInfo { author_username :: String }
+mergeRequestInfo :: Manager
+                 -> Configs
+                 -> String -- Merge request iid
+                 -> IO MergeRequestInfo
+mergeRequestInfo m c iid = do
+  let token = priToken $ configGet c priTokenGet "PrivateToken not found"
+      projId = projID $ configGet c listProjConfig "Project info not found"
+      mrInfoUrl_ = replaceAll singleMRUrl [projId, iid, token]
+
+  response <- get_req mrInfoUrl_ m
+
+  case (fst response) of
+    200 -> return $ MRInfo $ getMRInfo (snd response)
+    _ -> return $ MRInfo ""
+
+  where getMRInfo body = do
+          let content = (decode body :: Maybe Object)
+
+              author :: Maybe String
+              author = flip parseMaybe (fromJust content) $ \obj -> do
+                author <- obj .: cs "author"
+
+                let username = fromJust $ flip parseMaybe author $ \obj -> do
+                      username <- obj .: cs "username"
+                      return username
+                return username
+
+          fromJust author
 
 -- Merge Request daily
 subMatch :: (a, b, c, d) -> d
@@ -198,3 +235,15 @@ mrInfoTrans o = let result = flip parseMaybe o $ \obj -> do
                     in if isNothing result
                         then (0, "N/A", "N/A")
                         else fromJust result
+
+-- Unit Testing
+repoTest :: Test
+repoTest = TestList [TestLabel "Repo Testing" (TestCase repoAssert)]
+  where repoAssert :: Assertion
+        repoAssert = do
+          m <- newManager defaultManagerSettings
+          c <- loadConfig "GL8900" "./config"
+
+          info <- mergeRequestInfo m c "200"
+
+          print $ author_username info

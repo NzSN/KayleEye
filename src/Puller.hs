@@ -8,6 +8,9 @@ import Modules.ConfigReader
 import Notifier
 import KayleConst
 
+import Data.Maybe
+import Data.Foldable
+
 import Control.Monad
 import Control.Concurrent
 import Network.HTTP.Client
@@ -52,14 +55,43 @@ pullerSpawn p = forever $ do
   iid <- readChan reqQ
   print $ "Pull request " ++ iid ++ " arrived"
 
-  if pullCond p iid
+  -- Auto merge condition check
+  cond <- pullCond p iid
+
+  if cond
     then doPulling p iid
     else return ()
 
   where
+    -- DistrustList checking
+    distrustList_check :: Puller -> String -> IO Bool
+    distrustList_check p iid = do
+      let manager_ = manager p
+          config_ = config p
+
+      -- Is the merge requests's user in distrust list
+      mrInfo <- mergeRequestInfo manager_ config_ iid
+
+      let author = author_username mrInfo
+          distrustList = distrustListGet config_
+
+          list = if isNothing distrustList
+                 then []
+                 else distrust_list $ fromJust distrustList
+      return $ not . elem author $ list
+
     -- True if this merge request is able to processed.
-    pullCond :: Puller -> String -> Bool
-    pullCond p iid = True
+    pullCond :: Puller -> String -> IO Bool
+    pullCond p iid =
+      -- If an item return True means checking is passed
+      -- otherwise checking is failed.
+      let condArray = [distrustList_check]
+      in foldlM checking True condArray
+
+      where
+        checking acc cond = do
+          val <- cond p iid
+          return $ val && acc
 
 doPulling :: Puller -> String -> IO ()
 doPulling p iid = do

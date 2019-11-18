@@ -39,7 +39,7 @@ packages:
 # - acme-missiles-0.3
 # - git: https://github.com/commercialhaskell/stack.git
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
-extra-deps: [smtp-mail-0.2.0.0]
+extra-deps: [smtp-mail-0.2.0.0, gitlab-haskell-0.1.2]
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -64,3 +64,4 @@ extra-deps: [smtp-mail-0.2.0.0]
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+

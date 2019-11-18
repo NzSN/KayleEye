@@ -55,6 +55,7 @@ dependencies:
 - time
 - stm
 - cryptonite
+- gitlab-haskell
 
 library:
   source-dirs: src

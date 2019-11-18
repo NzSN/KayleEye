@@ -59,6 +59,7 @@ data TestContent_cfg = TestContent_cfg { content :: [(String, String)] } | TestC
 data DatabaseInfo_cfg = DatabaseInfo_cfg
   { db_host :: String, db_user :: String, db_pass :: String, db :: String } deriving Show
 data ServerInfo_cfg = ServerInfo_cfg { addr :: String, port :: String } deriving Show
+data DistrustList_cfg = DistrustList_cfg { distrust_list :: [String] } deriving Show
 
 -- Configuration file parser
 configFile :: GenParser Char st Configs
@@ -102,7 +103,8 @@ optHead = do
          try (string "AdminEmail")    <|>
          try (string "ExtraEmails")   <|>
          try (string "NotifyTime")    <|>
-         try (string "PullTime")
+         try (string "PullTime")      <|>
+         (string "Distrust")
 
   return def
 
@@ -343,6 +345,11 @@ encryptKeyGet opts =
      then ""
      else fromJust key
 
+distrustListGet :: Configs -> Maybe DistrustList_cfg
+distrustListGet opts =
+  configRetrive opts "Distrust" $
+  \(Configs_L list) -> DistrustList_cfg $ map configVal' list
+
 configGet :: Configs -> (Configs -> Maybe a) -> String -> a
 configGet cfgs f errMsg = case f cfgs of
                      Nothing  -> error errMsg
@@ -403,3 +410,7 @@ parserTest = TestList [TestLabel "Parser unit Testing:" (TestCase parserAssert)]
       let cmd = fromJust $ testCmdGet config
       return ()
       -- assertEqual "TestCmd" ["@RebuildAll", ".\\GBN\\src\\clear_gpon.bat"] (content cmd)
+
+      -- Distrust list
+      let distrustList = fromJust $ distrustListGet config
+      assertEqual "DistrustList" ["linshizhi0848", "linshizhi0849"] (distrust_list distrustList)
