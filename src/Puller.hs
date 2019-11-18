@@ -64,6 +64,8 @@ pullerSpawn p = forever $ do
 
   where
     -- DistrustList checking
+    -- fixme: author name is better to retrive from worker but
+    --        not directly request from gitlab.
     distrustList_check :: Puller -> String -> IO Bool
     distrustList_check p iid = do
       let manager_ = manager p
