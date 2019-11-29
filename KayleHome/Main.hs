@@ -117,6 +117,8 @@ main = do
   runKayle doKayle env
 
 -- Register Table Maintainer
+-- fixme: while filtering oudated items should also do
+--        some cleaning works related to event mode
 regMaintainer :: KayleEnv -> IO ()
 regMaintainer env = forever $ do
   -- Current UTC time
@@ -398,7 +400,15 @@ postRegister l env =
 
   where mergePostRegister l env = return ()
         pushPostRegister l env = return ()
-        dailyPostRegister l env = lock (envPuller env)
+        dailyPostRegister l env = do
+          let puller = envPuller env
+
+          unlocked <- isUnlocked puller
+
+          if unlocked
+            then lock puller
+            else return ()
+
 
 postTerminated :: Letter -> KayleEnv -> IO ()
 postTerminated l env =
@@ -410,7 +420,13 @@ postTerminated l env =
 
   where mergePostTerminated l env = return ()
         pushPostTerminated l env = return ()
-        dailyPostTerminated l env = unlock (envPuller env)
+        dailyPostTerminated l env = do
+          let puller = envPuller env
+
+          locked <- isLocked puller
+          if locked
+            then unlock puller
+            else return ()
 
 -- Action be perform after test project done
 action :: Bool -> Letter -> KayleEnv -> Kayle
