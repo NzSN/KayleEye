@@ -150,6 +150,9 @@ regMaintainer env = forever $ do
         regTblClear tbl' current = do
           tbl_ <- readTVar $ regTbl tbl'
           let itemsOutDated = Map.foldl (eventFold current) [] tbl_
+              -- Fixme: Use mapWithKey here to do some extra operation while
+              -- clean an outdated test, such as unlock puller while
+              -- clean an outdated daily test.
               cleanMap = Map.map (filterOutDated current) tbl_
 
           -- Update register table
