@@ -120,12 +120,19 @@ main = do
 -- fixme: while filtering oudated items should also do
 --        some cleaning works related to event mode
 regMaintainer :: KayleEnv -> IO ()
-regMaintainer env = forever $ do
+regMaintainer env = do
   -- Current UTC time
   current <- getTimeNow
 
   -- Maintaining the register table
-  maintain tbl bKey current
+  catchSql (maintain tbl bKey current)
+    -- Sql exception is happened
+    -- and now jsut deal with 2003 error
+    (\e -> print ("Maintainer:" ++ show e)
+           -- Renew box key and use it to update
+           -- environment then next trun
+           >> waitKey_until (envCfg env)
+           >>= regMaintainer . kayleEnvSetBKey env)
 
   showRegTable tbl
 
@@ -143,8 +150,10 @@ regMaintainer env = forever $ do
           outdatedList <- atomically $ regTblClear rTbl current
 
           -- Remove outdated item from letterBox
-          mapM_ (removeLetter bKey procTbl) outdatedList
-          commitKey bKey
+          if Prelude.null outdatedList
+            then return ()
+            else mapM_ (removeLetter bKey procTbl) outdatedList
+                 >> commitKey bKey
 
         regTblClear :: RegisterTbl -> TimeOfDay' -> STM [String]
         regTblClear tbl' current = do
@@ -166,8 +175,8 @@ regMaintainer env = forever $ do
 
         blockFold :: TimeOfDay' -> [String] -> String -> RegisterItems -> [String]
         blockFold current acc k x = if isNeedClean current x
-                            then [k] ++ acc
-                            else acc
+                                    then [k] ++ acc
+                                    else acc
 
         -- Function to check is a items need clean
         isNeedClean :: TimeOfDay' -> RegisterItems -> Bool
@@ -191,7 +200,9 @@ waitKey_until :: Configs -> IO BoxKey
 waitKey_until c =
   let dbOpts = configGet c databaseGet db_err_msg
   in catchSql (boxKeyCreate (C.db_host dbOpts) (C.db_user dbOpts) (C.db_pass dbOpts) (C.db dbOpts))
-     (\_ -> (threadDelay boxKeyRetryInterval) >> waitKey_until c)
+     (\e -> (print $ show e)
+            >> (threadDelay boxKeyRetryInterval)
+            >> waitKey_until c)
 
 doKayle :: Kayle
 doKayle =
