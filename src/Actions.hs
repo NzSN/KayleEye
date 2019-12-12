@@ -92,7 +92,7 @@ merge_action success l env =
   then pullRequest (envPuller env) (Actions.iid l)
        >> send_test_content env l
        >> return k_ok
-  else return k_error
+  else return k_ok
 
 -- Action selector during the letter already in history table.
 actionSelector' :: String -> Action
