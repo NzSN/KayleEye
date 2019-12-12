@@ -88,9 +88,11 @@ merge_action :: Action
 merge_action success l env =
   -- (accept (envMng env) (envCfg env) (envNotifier env) $ (Actions.iid l))
   -- Have a request to Puller instead of accept directly
-  pullRequest (envPuller env) (Actions.iid l)
-  >> send_test_content env l
-  >> return k_ok
+  if success
+  then pullRequest (envPuller env) (Actions.iid l)
+       >> send_test_content env l
+       >> return k_ok
+  else return k_error
 
 -- Action selector during the letter already in history table.
 actionSelector' :: String -> Action
