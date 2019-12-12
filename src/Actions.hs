@@ -62,6 +62,16 @@ send_test_content e l =
   (commitMessage e $ l)
   >>= (\body -> notifyViaEmail (envNotifier e) (subject l) body)
 
+send_mr_result :: KayleEnv -> Letter -> IO ()
+send_mr_result e l =
+  emailBody >>= notifyViaEmail (envNotifier e) (subject l)
+
+  where emailBody = do
+          let iid = Actions.iid l
+          body <- commitMessage e l
+
+          return $ "MergeRequest: " ++ iid ++ "\n" ++ body
+
 -- Action selector during the letter is new
 actionSelector :: String -> Action
 actionSelector event
@@ -90,9 +100,10 @@ merge_action success l env =
   -- Have a request to Puller instead of accept directly
   if success
   then pullRequest (envPuller env) (Actions.iid l)
-       >> send_test_content env l
+       >> send_mr_result env l
        >> return k_ok
-  else return k_ok
+  else send_mr_result env l
+       >> return k_ok
 
 -- Action selector during the letter already in history table.
 actionSelector' :: String -> Action
