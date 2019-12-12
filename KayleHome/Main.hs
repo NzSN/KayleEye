@@ -314,7 +314,7 @@ doKayle =
             >>= (\x -> if x == 1
                          then if isTestSuccess lUpdated
                               then logKayle "Info" "Accpet Letter" >> action True rl env
-                              else action False rl env
+                              else logKayle "Info" "Denie Letter" >> action False rl env
                          else return k_ok)
 
 controlProc :: Letter -> KayleEnv -> IO ()
