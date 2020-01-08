@@ -28,6 +28,8 @@ import Network.Mail.SMTP
 
 import Data.String.Conversions (cs)
 
+import qualified Control.Exception as Excep
+
 class MessageFormat a where
   present :: a -> [String]
 
@@ -65,16 +67,24 @@ notifierSpawn n =
 
   in notifyloop beginTime endTime
 
-  where notifyloop bTime eTime = do
-          msg <- (readChan $ queue n)
-          now <- getTimeNow
+  where
 
-          if isTimeInInterval now bTime eTime
-          then notifyTo' n msg
-          else (threadDelay $ (bTime Time.- now) * minute_micro)
-               >> notifyTo' n msg
+    notifyUntil n msg =
+      Excep.handle (\(Excep.SomeException e) -> threadDelay (minute_micro `div` 60)
+                                                >> notifyUntil n msg)
+      (notifyTo' n msg)
 
-          notifyloop bTime eTime
+    notifyloop bTime eTime = do
+      msg <- (readChan $ queue n)
+      now <- getTimeNow
+
+      if isTimeInInterval now bTime eTime
+        then notifyUntil n msg
+        else (threadDelay $ (bTime Time.- now) * minute_micro)
+             >> notifyUntil n msg
+
+      notifyloop bTime eTime
+
 
 notifyViaEmail :: Notifier (String, String)
                -> String -- Subject
