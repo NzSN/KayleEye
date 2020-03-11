@@ -120,7 +120,7 @@ main = do
 -- fixme: while filtering oudated items should also do
 --        some cleaning works related to event mode
 regMaintainer :: KayleEnv -> IO ()
-regMaintainer env = do
+regMaintainer env = forever $ do
   -- Current UTC time
   current <- getTimeNow
 
