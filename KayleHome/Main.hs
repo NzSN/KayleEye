@@ -105,13 +105,13 @@ main = do
 
   let env = (KayleEnv configs' manager args Empty_Homer bKey room puller regTable notifier)
 
-  -- Spawn Puller thread
+  -- Spawn Puller process
   forkIO $ pullerSpawn puller
-  -- Spawn Notifier thread
+  -- Spawn Notifier process
   forkIO $ notifierSpawn notifier
-  -- Spawn Doorkeeper thread
+  -- Spawn Doorkeeper process
   forkIO $ doorKeeper env
-  -- Spawn Register Maintainer
+  -- Spawn Register Maintainer process
   forkIO $ regMaintainer env
 
   runKayle doKayle env

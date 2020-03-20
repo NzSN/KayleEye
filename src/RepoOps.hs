@@ -58,10 +58,12 @@ accept mng cfgs notifier iid = do
            ("Merge request " ++ iid ++ " is unable to be accepted")
     -- If it has some conflicts and can not be merged - you’ll get a 406 and
     -- the error message ‘Branch cannot be merged’
-    406 -> rebase mng cfgs notifier iid >> delay (3 * seconds_micro)
+    406 -> rebase mng cfgs notifier iid
            -- try accept after rebase if rebase success accept should be success too
            -- otherwise a message will be notified in rebase function.
-           >> (put_req acceptUrl_ mng >> return ())
+          >>= \returncode -> if returncode == 0
+                             then accept mng cfgs notifier iid
+                             else notifyViaEmail notifier "Failed to accept" "Rebase failed"
     -- If the sha parameter is passed and does not match the HEAD of the source -
     -- you’ll get a 409 and the error message ‘SHA does not match HEAD of source branch’
     409 -> notifyViaEmail notifier "Failed to accept"
@@ -77,7 +79,7 @@ accept mng cfgs notifier iid = do
 -- Rebase merge request to target branch
 rebase :: Manager -> Configs -> Notifier (String, String)
        -> String -- iid, Merge request id
-       -> IO ()
+       -> IO Int
 rebase mng cfgs notifier iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
@@ -87,13 +89,14 @@ rebase mng cfgs notifier iid = do
   case code of
     -- If you don’t have permissions to push to the merge request’s source branch -
     -- you’ll get a 403 Forbidden response.
-    403 -> notifyViaEmail notifier "Failed to rebase" "Permission denied to rebase merge request"
+    403 -> notifyViaEmail notifier "Failed to rebase" "Permission denied to rebase merge request" >> return (-1)
     -- The API will return a 202 Accepted response if the request is enqueued successfully
     -- Merge request not found or the url is wrong
     404 -> notifyViaEmail notifier "Failed to rebase" ("Merge requests(" ++ iid ++ ") not found or the url is wrong")
+           >> return (-1)
     -- Success
-    202 -> print "rebase success" >> return ()
-    _   -> notifyViaEmail notifier "Failed to rebase" $ "Error : " ++ (show code)
+    202 -> print "rebase success" >> return 0
+    _   -> (notifyViaEmail notifier "Failed to rebase" $ "Error : " ++ (show code)) >> return (-1)
 
 -- Commit Message
 commitMsg :: Manager -> Configs -> String -> IO String
