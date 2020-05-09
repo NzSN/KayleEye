@@ -120,5 +120,6 @@ doPulling p iid = do
     else print "Wait until in interval to pulling"
          >> (threadDelay $ (beginTime Time.- now) * minute_micro)
          >> lock p
+         >> print "Pulling"
          >> accept manager_ configs notifier_ iid
          >> unlock p
