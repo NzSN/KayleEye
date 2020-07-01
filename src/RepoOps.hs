@@ -34,11 +34,11 @@ import GitLab
 import GitLab.Types
 import GitLab.API.Projects
 
-acceptUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
-rebaseUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*/rebase?private_token=*"
-commitsUrl = "http://gpon.git.com:8011/api/v4/projects/*/repository/commits/*?private_token=*"
-mergesUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests?private_token=*"
-singleMRUrl = "http://gpon.git.com:8011/api/v4/projects/*/merge_requests/*?private_token=*"
+acceptUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
+rebaseUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests/*/rebase?private_token=*"
+commitsUrl = "http://10.5.4.211:8011/api/v4/projects/*/repository/commits/*?private_token=*"
+mergesUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests?private_token=*"
+singleMRUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests/*?private_token=*"
 
 -- Accept an merge request into main branch
 accept :: Manager -> Configs -> Notifier (String, String)
