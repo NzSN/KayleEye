@@ -89,7 +89,7 @@ daily_action success l env =
                  >>= (\mrs_today ->
                        notifyViaEmail (envNotifier env) (subject l) (x ++ mrs_today)))
   >> return (ident_sha . str2Ident $ ident l)
-  >>= \sha -> put_req ("http://10.5.4.216:32359/manager/api/versions/" ++ sha  ++ "/temporaryGen") (envMng env)
+  >>= \sha -> put_req ("http://10.5.4.216:32359/manager/api/versions/" ++ sha  ++ "/temporaryGen/") (envMng env)
   >> return k_ok
 
 push_action :: Action
