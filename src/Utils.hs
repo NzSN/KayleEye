@@ -17,10 +17,12 @@ retry interval count act defVal = do
   result <- try $ act
 
   case result of
-    Left (SomeException e) -> if count > 0
-                              then threadDelay (interval * second_micro_int)
-                                   >> retry interval (count - 1) act defVal
-                              else return defVal
+    Left (SomeException e) ->
+      if count > 0
+      then threadDelay (interval * second_micro_int)
+           >> retry interval (count - 1) act defVal
+      else return defVal
+
     Right ret -> return ret
 
 
