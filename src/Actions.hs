@@ -2,6 +2,7 @@
 
 module Actions where
 
+import Control.Exception
 import KayleDefined as K
 import LetterBox
 import Letter
@@ -10,6 +11,7 @@ import KayleBasics
 import KayleConst
 import Notifier
 import Puller
+import Utils
 
 import Data.Maybe
 import Control.Monad.Trans.Maybe
@@ -89,8 +91,14 @@ daily_action success l env =
                  >>= (\mrs_today ->
                        notifyViaEmail (envNotifier env) (subject l) (x ++ mrs_today)))
   >> return (ident_sha . str2Ident $ ident l)
-  >>= \sha -> put_req ("http://10.5.4.216:32359/manager/api/versions/" ++ sha  ++ "/temporaryGen/") (envMng env)
+  >>= \sha -> retry retry_interval retry_count (put_req (req_url sha) (envMng env)) 0
   >> return k_ok
+
+  where
+    retry_interval = 1
+    -- Retry untion success
+    retry_count = 0
+    req_url sha = "http://10.5.4.216:32359/manager/api/versions/" ++ sha  ++ "/temporaryGen/"
 
 push_action :: Action
 push_action success l env =

@@ -11,6 +11,7 @@ import DoorKeeper
 import Room
 import Encrypt
 import RepoOps
+import Utils
 
 tests = TestList [TestLabel "loggerTest" loggerTest,
                   TestLabel "ParserTest" parserTest,
@@ -20,7 +21,8 @@ tests = TestList [TestLabel "loggerTest" loggerTest,
                   TestLabel "RoomTest" roomUnitTest,
                   TestLabel "HomerTest" homerTest,
                   TestLabel "EncryptTest" encryptTest,
-                  TestLabel "RepoTest" repoTest]
+                  TestLabel "RepoTest" repoTest,
+                  TestLabel "UtilTest" utilTest]
 
 main = do
   runTestTT tests
