@@ -23,7 +23,8 @@ retry interval count act defVal = do
            >> retry interval (count - 1) act defVal
       else return defVal
 
-    Right ret -> return ret
+    -- Evaluate ret to Normal Form to reveal all exceptions within ret
+    Right ret -> handle (\(SomeException e) -> return defVal) (ret `deepseq` return ret)
 
 
 -- Test cases1
@@ -31,6 +32,9 @@ utilTest :: Test
 utilTest = TestList [TestLabel "Retry test" (TestCase retryAssert)]
   where retryAssert :: Assertion
         retryAssert = do
+
+          t <- retry 1 1 (return $ 5 `div` 0) (1 :: Int)
+          assertEqual "Retry" 1 t
 
           manager <- newManager defaultManagerSettings
           t1 <- retry 1 1 (put_req "http://10.10.10.10" manager) 1
