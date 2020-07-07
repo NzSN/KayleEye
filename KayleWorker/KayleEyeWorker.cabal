@@ -1,0 +1,174 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: e91f7f75eec7fda61252bb8c6ab3445e96668a4ec631301368f5069b0ee9db85
+
+name:           KayleEyeWorker
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/KayleEye#readme>
+homepage:       https://github.com/githubuser/KayleEye#readme
+bug-reports:    https://github.com/githubuser/KayleEye/issues
+author:         Tootooroo
+maintainer:     aydenlin@foxmail.com
+copyright:      2019 Tootooroo
+license:        BSD3
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/KayleEye
+
+library
+  exposed-modules:
+      DoorKeeper
+      Encrypt
+      Homer
+      KayleBasics
+      KayleConst
+      KayleDefined
+      Letter
+      LetterBox
+      Lib
+      Logger
+      Modules.ConfigReader
+      Network.Mail.SMTP
+      Network.Mail.SMTP.Auth
+      Network.Mail.SMTP.Types
+      Notifier
+      NotifyHandler
+      Puller
+      RepoOps
+      Room
+      Time
+      Utils
+  other-modules:
+      Paths_KayleEyeWorker
+  hs-source-dirs:
+      ../src
+  build-depends:
+      Cabal
+    , HDBC
+    , HDBC-mysql
+    , HUnit
+    , aeson
+    , array
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , connection
+    , containers
+    , cryptohash
+    , cryptonite
+    , deepseq
+    , directory
+    , filepath
+    , http-client
+    , http-types
+    , mime-mail
+    , mtl
+    , network
+    , parsec
+    , process
+    , regex-tdfa
+    , split
+    , stm
+    , string-conversions
+    , text
+    , time
+    , transformers
+    , unbounded-delays
+  default-language: Haskell2010
+
+executable KayleEyeHome-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_KayleEyeWorker
+  hs-source-dirs:
+      ./.
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Cabal
+    , HDBC
+    , HDBC-mysql
+    , HUnit
+    , KayleEyeWorker
+    , aeson
+    , array
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , connection
+    , containers
+    , cryptohash
+    , cryptonite
+    , deepseq
+    , directory
+    , filepath
+    , http-client
+    , http-types
+    , mime-mail
+    , mtl
+    , network
+    , parsec
+    , process
+    , regex-tdfa
+    , split
+    , stm
+    , string-conversions
+    , text
+    , time
+    , transformers
+    , unbounded-delays
+  default-language: Haskell2010
+
+test-suite KayleEye-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_KayleEyeWorker
+  hs-source-dirs:
+      ../test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Cabal
+    , HDBC
+    , HDBC-mysql
+    , HUnit
+    , KayleEyeWorker
+    , aeson
+    , array
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , connection
+    , containers
+    , cryptohash
+    , cryptonite
+    , deepseq
+    , directory
+    , filepath
+    , http-client
+    , http-types
+    , mime-mail
+    , mtl
+    , network
+    , parsec
+    , process
+    , regex-tdfa
+    , split
+    , stm
+    , string-conversions
+    , text
+    , time
+    , transformers
+    , unbounded-delays
+  default-language: Haskell2010

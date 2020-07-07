@@ -1,10 +1,10 @@
-name:                KayleEye
+name:                KayleEyeWorker
 version:             0.1.0.0
 github:              "githubuser/KayleEye"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2019 Author name here"
+author:              "Tootooroo"
+maintainer:          "aydenlin@foxmail.com"
+copyright:           "2019 Tootooroo"
 
 extra-source-files:
 - README.md
@@ -35,8 +35,6 @@ dependencies:
 - directory
 - unbounded-delays
 - transformers
-- HDBC
-- HDBC-mysql
 - string-conversions
 - array
 - base16-bytestring
@@ -45,50 +43,39 @@ dependencies:
 - connection
 - cryptohash
 - filepath
-- mime-mail
-- network
-- network-bsd
 - text
 - mtl
 - HUnit
-- regex-tdfa
-- time
-- stm
 - cryptonite
-- gitlab-haskell
+- time
+- regex-tdfa
+- mime-mail
+- stm
+- HDBC
+- HDBC-mysql
 - deepseq
 
 library:
-  source-dirs: src
+  source-dirs: ../src
 
 executables:
-  KayleEye-exe:
-    main:                Main.hs
-    source-dirs:         Kayle
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - KayleEye
-
   KayleEyeHome-exe:
     main:                Main.hs
-    source-dirs:         KayleHome
+    source-dirs:         .
     ghc-options:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - KayleEye
+    - KayleEyeWorker
 
 tests:
   KayleEye-test:
     main:                Spec.hs
-    source-dirs:         test
+    source-dirs:         ../test
     ghc-options:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - KayleEye
+    - KayleEyeWorker

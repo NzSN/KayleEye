@@ -30,10 +30,6 @@ import Data.Time.Calendar
 
 import Notifier
 
-import GitLab
-import GitLab.Types
-import GitLab.API.Projects
-
 acceptUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
 rebaseUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests/*/rebase?private_token=*"
 commitsUrl = "http://10.5.4.211:8011/api/v4/projects/*/repository/commits/*?private_token=*"

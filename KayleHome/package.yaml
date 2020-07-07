@@ -1,0 +1,85 @@
+name:                KayleEye
+version:             0.1.0.0
+github:              "githubuser/KayleEye"
+license:             BSD3
+author:              "Tootooroo"
+maintainer:          "aydenlin@foxmail.com"
+copyright:           "2019 Tootooroo"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/KayleEye#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- Cabal
+- parsec
+- split
+- aeson
+- containers
+- network
+- bytestring
+- text
+- http-client
+- http-types
+- process
+- directory
+- unbounded-delays
+- transformers
+- HDBC
+- HDBC-mysql
+- string-conversions
+- array
+- base16-bytestring
+- base64-bytestring
+- bytestring
+- connection
+- cryptohash
+- filepath
+- mime-mail
+- network
+- network-bsd
+- text
+- mtl
+- HUnit
+- regex-tdfa
+- time
+- stm
+- cryptonite
+- deepseq
+
+library:
+  source-dirs:
+    - ../src
+    - src
+
+executables:
+  KayleEyeHome-exe:
+    main:                Main.hs
+    source-dirs:         .
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - KayleEye
+
+tests:
+  KayleEye-test:
+    main:                Spec.hs
+    source-dirs:         ../test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - KayleEye
