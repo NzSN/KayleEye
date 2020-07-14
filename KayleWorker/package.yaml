@@ -59,7 +59,7 @@ library:
   source-dirs: ../src
 
 executables:
-  KayleEyeHome-exe:
+  KayleEyeWorker-exe:
     main:                Main.hs
     source-dirs:         .
     ghc-options:
