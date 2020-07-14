@@ -27,7 +27,7 @@ import Text.Regex.TDFA
 
 import Data.Time.Clock
 import Data.Time.Calendar
-
+import Utils (retry)
 import Notifier
 
 acceptUrl = "http://10.5.4.211:8011/api/v4/projects/*/merge_requests/*/merge?private_token=*"
@@ -44,7 +44,7 @@ accept mng cfgs notifier iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
       acceptUrl_ = replaceAll acceptUrl [projId, iid, token]
-  code <- put_req acceptUrl_ mng
+  code <- retry 1 3 (put_req acceptUrl_ mng) (-1)
 
   case code of
     -- If merge request is unable to be accepted (ie: Work in Progress,
@@ -80,7 +80,7 @@ rebase mng cfgs notifier iid = do
   let token = priToken $ configGet cfgs priTokenGet "PrivateToken not found"
       projId = projID $ configGet cfgs listProjConfig "Project info not found"
       rebaseUrl_ = replaceAll rebaseUrl [projId, iid, token]
-  code <- put_req rebaseUrl_ mng
+  code <- retry 1 3 (put_req rebaseUrl_ mng) (-1)
 
   case code of
     -- If you don’t have permissions to push to the merge request’s source branch -
