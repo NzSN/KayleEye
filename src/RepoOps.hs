@@ -13,8 +13,7 @@ import Network.HTTP.Types.Status (statusCode)
 import KayleConst
 import Modules.ConfigReader as Config
 
-import Data.ByteString.Lazy
-
+import Data.ByteString.Lazy as BS
 import Data.Maybe
 
 import System.Environment
@@ -101,7 +100,7 @@ commitMsg m cfg sha = do
       projId = projID $ configGet cfg listProjConfig "Project info not found"
       commitUrl_ = replaceAll commitsUrl [projId, sha, token]
 
-  response <- get_req commitUrl_ m
+  response <- retry 1 3 (get_req commitUrl_ m) (-1, BS.empty)
 
   case (fst response) of
     200 -> return $ getMsg (snd response)
@@ -127,7 +126,7 @@ mergeRequestInfo m c iid = do
       projId = projID $ configGet c listProjConfig "Project info not found"
       mrInfoUrl_ = replaceAll singleMRUrl [projId, iid, token]
 
-  response <- get_req mrInfoUrl_ m
+  response <- retry 1 3 (get_req mrInfoUrl_ m) (-1, BS.empty)
 
   case (fst response) of
     200 -> return $ MRInfo $ getMRInfo (snd response)
@@ -202,7 +201,7 @@ yesterday'sMR m c = do
   time <- getCurrentTime
   let date' = regex_gitlab_date $ showGregorian $ utctDay time
 
-  response <- get_req mergeUrl_ m
+  response <-retry 1 3 (get_req mergeUrl_ m) (-1, BS.empty)
 
   case (fst response) of
     200 -> return $ getMRs_yesterday date' (snd response)
