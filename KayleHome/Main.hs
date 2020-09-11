@@ -124,6 +124,11 @@ regMaintainer env = forever $ do
   -- Current UTC time
   current <- getTimeNow
 
+  -- Sleep in a query interval
+  threadDelay queryInterval
+
+  showRegTable tbl
+
   -- Maintaining the register table
   catchSql (maintain tbl bKey current)
     -- Sql exception is happened
@@ -134,10 +139,6 @@ regMaintainer env = forever $ do
            >> waitKey_until (envCfg env)
            >>= regMaintainer . kayleEnvSetBKey env)
 
-  showRegTable tbl
-
-  -- Sleep in a query interval
-  threadDelay queryInterval
 
   where tbl = envRegTbl env
         bKey = envKey env
@@ -206,10 +207,10 @@ waitKey_until c =
 
 doKayle :: Kayle
 doKayle =
-  ask >>= \l -> procLoop Empty_letter l
+  ask >>= \l -> do_forever Empty_letter l
   where
-    procLoop :: Letter -> KayleEnv -> Kayle
-    procLoop l env = do
+    do_forever :: Letter -> KayleEnv -> Kayle
+    do_forever l env = do
       let homer = envHomer env
           bKey = envKey env
           room = envRoom env
@@ -226,19 +227,18 @@ doKayle =
       if isControlEvent $ typeOfLetter letter
         then (liftIO . controlProc letter $ env)
              >> (liftIO . showRegTable $ (envRegTbl env))
-             >> procLoop Empty_letter env
-        else return 0
+             >> do_forever Empty_letter env
 
-      -- fixme: should provide function to deal with different error type
-      eType <- liftIO . catchSql (procLetter' letter bKey env) $ procHandler
-
-      case eType of
-        -- OK
-        0 -> (liftIO . print $ "OK") >> procLoop Empty_letter env
-        -- ERROR, just retry the letter with new box key.
-        1 -> (liftIO . print $ "ERROR") >> (liftIO . waitKey_until $ (envCfg env))
-          >>= \x -> let env_new = kayleEnvSetBKey env x
-                    in procLoop letter env_new
+        -- fixme: should provide function to deal with different error type
+        else (liftIO . catchSql (procLetter' letter bKey env) $ procHandler)
+             >>= \eType ->
+                   case eType of
+                     -- OK
+                     0 -> (liftIO . print $ "OK") >> do_forever Empty_letter env
+                     -- ERROR, just retry the letter with new box key.
+                     1 -> (liftIO . print $ "ERROR") >> (liftIO . waitKey_until $ (envCfg env))
+                          >>= \x -> let env_new = kayleEnvSetBKey env x
+                                    in do_forever letter env_new
 
     procHandler = \e -> print e >>  return k_error :: IO Integer
     procLetter' l b e =
