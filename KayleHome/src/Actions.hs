@@ -27,7 +27,7 @@ mapFunc "F" = "Failed"
 mapFunc "T" = "Successed"
 -- Which should never happened
 mapFunc _ = "Pending"
-mapFunc' = \acc x -> acc ++ (fst x) ++ " -- " ++ (mapFunc . snd $ x) ++ "\n"
+mapFunc' acc x = acc ++ fst x ++ " -- " ++ (mapFunc . snd $ x) ++ "\n"
 
 commitMessage :: KayleEnv -> Letter -> IO String
 commitMessage env l = do
@@ -119,6 +119,8 @@ merge_action success l env =
 actionSelector' :: String -> Action
 actionSelector' event
   | event == "daily" = daily_action'
+  -- Remove history the n
+  | event == "mergeRequest" = \s l e -> return k_ok
   | event /= "daily" = \s l e -> return k_ok
 
 -- Action definitions
